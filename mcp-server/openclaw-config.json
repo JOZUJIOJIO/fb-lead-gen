@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "leadflow": {
+      "command": "python3",
+      "args": ["/Users/yewudao/fb-lead-gen/mcp-server/server.py"],
+      "env": {
+        "LEADFLOW_BASE_URL": "http://localhost:8000",
+        "LEADFLOW_EMAIL": "admin@leadflow.com",
+        "LEADFLOW_PASSWORD": "admin123456",
+        "FB_EMAIL": "",
+        "FB_PASSWORD": "",
+        "KIMI_API_KEY": "",
+        "KIMI_BASE_URL": "https://api.moonshot.cn/v1",
+        "KIMI_MODEL": "kimi-latest",
+        "WHATSAPP_CONTACT_NUMBER": "+8613800138000"
+      }
+    }
+  }
+}
