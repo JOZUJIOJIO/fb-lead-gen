@@ -5,6 +5,7 @@
 # ============================================================
 
 set -e
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "🚀 LeadFlow AI 一键部署"
 echo "========================"
 
@@ -92,7 +93,7 @@ sleep 3
 # 3. 安装后端依赖
 echo ""
 echo "📋 Step 3/6: 安装后端 Python 依赖..."
-cd "$(dirname "$0")/backend"
+cd "$PROJECT_DIR/backend"
 pip3 install -r requirements.txt -q 2>&1 | tail -1
 echo "  ✅ 后端依赖安装完成"
 
@@ -101,6 +102,10 @@ echo ""
 echo "📋 Step 4/6: 配置环境变量..."
 if [ ! -f .env ]; then
     cp .env.example .env
+    # 自动生成随机 SECRET_KEY
+    RANDOM_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+    sed -i '' "s/change-this-to-a-random-string/$RANDOM_KEY/" .env
+    echo "  ✅ 已自动生成 SECRET_KEY"
     echo "  ⚠️  已创建 .env 文件，请编辑填入你的 API Key:"
     echo "     $(pwd)/.env"
     echo ""
@@ -120,16 +125,20 @@ fi
 # 5. 安装前端依赖
 echo ""
 echo "📋 Step 5/6: 安装前端 Node 依赖..."
-cd "$(dirname "$0")/../frontend"
+cd "$PROJECT_DIR/frontend"
 npm install --silent 2>&1 | tail -1
 echo "  ✅ 前端依赖安装完成"
 
 # 6. 安装 MCP Server 依赖 + Playwright
 echo ""
 echo "📋 Step 6/6: 安装 MCP Server + 浏览器引擎..."
-cd "$(dirname "$0")/../mcp-server"
+cd "$PROJECT_DIR/mcp-server"
 pip3 install -r requirements.txt -q 2>&1 | tail -1
 python3 -m playwright install chromium 2>/dev/null
+if [ ! -f persona.json ]; then
+    cp persona.example.json persona.json
+    echo "  ✅ 已创建 persona.json（可按需编辑）"
+fi
 echo "  ✅ MCP Server + Playwright 安装完成"
 
 echo ""
@@ -138,5 +147,5 @@ echo "✅ 部署完成！"
 echo "========================================"
 echo ""
 echo "启动命令:"
-echo "  bash $(dirname "$0")/start.sh"
+echo "  bash $PROJECT_DIR/start.sh"
 echo ""

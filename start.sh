@@ -11,6 +11,7 @@ if [ "$1" = "stop" ]; then
     echo "🛑 停止所有服务..."
     lsof -ti :8000 | xargs kill -9 2>/dev/null && echo "  后端已停止" || echo "  后端未运行"
     lsof -ti :3000 | xargs kill -9 2>/dev/null && echo "  前端已停止" || echo "  前端未运行"
+    pkill -f "celery.*leadflow" 2>/dev/null && echo "  Celery Worker 已停止" || echo "  Celery Worker 未运行"
     pkill -f "auto_poller.py" 2>/dev/null && echo "  轮询器已停止" || echo "  轮询器未运行"
     echo "✅ 已停止（数据库保持运行）"
     exit 0
@@ -62,6 +63,18 @@ else
     exit 1
 fi
 
+# 启动 Celery Worker
+echo "  启动 Celery Worker..."
+cd "$PROJECT_DIR/backend"
+celery -A app.tasks.celery_app worker --loglevel=info &>/tmp/leadflow-celery.log &
+CELERY_PID=$!
+sleep 2
+if ps -p $CELERY_PID &>/dev/null; then
+    echo "  ✅ Celery Worker (PID: $CELERY_PID)"
+else
+    echo "  ⚠️  Celery Worker 启动失败，查看日志: cat /tmp/leadflow-celery.log"
+fi
+
 # 启动前端
 echo "  启动前端..."
 cd "$PROJECT_DIR/frontend"
@@ -91,6 +104,7 @@ echo "    自定义间隔: python3 $PROJECT_DIR/mcp-server/auto_poller.py --inte
 echo ""
 echo "  停止: bash $PROJECT_DIR/start.sh stop"
 echo "  后端日志: tail -f /tmp/leadflow-backend.log"
+echo "  Celery日志: tail -f /tmp/leadflow-celery.log"
 echo "  前端日志: tail -f /tmp/leadflow-frontend.log"
 echo ""
 
