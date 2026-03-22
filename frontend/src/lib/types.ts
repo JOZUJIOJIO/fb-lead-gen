@@ -108,6 +108,35 @@ export interface DashboardStats {
   reply_rate: number;
 }
 
+export interface DataSource {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface ImportResult {
+  total: number;
+  imported: number;
+  duplicates: number;
+  errors: number;
+  source: string;
+}
+
+export interface AnalyticsOverview {
+  total_leads: number;
+  total_contacted: number;
+  total_replied: number;
+  total_converted: number;
+  reply_rate: number;
+  conversion_rate: number;
+  avg_score: number;
+  leads_by_source: Record<string, number>;
+  leads_by_stage: Record<string, number>;
+  leads_by_country: Record<string, number>;
+  leads_by_industry: Record<string, number>;
+  daily_activity: Array<{ date: string; leads: number; contacted: number; replied: number }>;
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;

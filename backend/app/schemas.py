@@ -40,6 +40,9 @@ class LeadCreate(BaseModel):
     email: str = ""
     source: str = "csv"
     source_url: str = ""
+    source_detail: dict[str, Any] = {}
+    industry: str = ""
+    country: str = ""
     profile_data: dict[str, Any] = {}
     language: str = "en"
 
@@ -62,6 +65,9 @@ class LeadResponse(BaseModel):
     email: str
     source: str
     source_url: str
+    source_detail: dict[str, Any] = {}
+    industry: str = ""
+    country: str = ""
     profile_data: dict[str, Any]
     score: float
     status: str
@@ -188,6 +194,13 @@ class ImportResult(BaseModel):
     imported: int
     duplicates: int
     errors: int
+    source: str = "csv"
+
+
+class DataSourceInfo(BaseModel):
+    id: str
+    name: str
+    description: str
 
 
 # --- Conversation ---

@@ -6,7 +6,7 @@ from passlib.context import CryptContext
 
 from app.database import Base, engine, SessionLocal
 from app.models import User
-from app.routers import auth, campaigns, conversations, leads, messages, persona, templates
+from app.routers import analytics, auth, campaigns, conversations, leads, messages, persona, templates
 
 logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -54,6 +54,7 @@ app.include_router(messages.router, prefix="/messages", tags=["Messages"])
 app.include_router(templates.router, prefix="/templates", tags=["Templates"])
 app.include_router(conversations.router, prefix="/conversations", tags=["Conversations"])
 app.include_router(persona.router, prefix="/persona", tags=["Persona"])
+app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 
 
 @app.get("/health")

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,7 @@ from app.models import Lead, LeadStatus, User
 from app.routers.auth import get_current_user
 from app.schemas import (
     BatchIds,
+    DataSourceInfo,
     ImportResult,
     LeadCreate,
     LeadListResponse,
@@ -15,6 +16,7 @@ from app.schemas import (
 )
 from app.services.ai_engine import analyze_lead, generate_message
 from app.services.csv_import import parse_file
+from app.services.data_sources import get_adapter, list_sources
 
 router = APIRouter()
 
@@ -118,6 +120,78 @@ def import_leads(
 
     db.commit()
     return ImportResult(total=len(rows), imported=imported, duplicates=duplicates, errors=errors)
+
+
+@router.get("/sources", response_model=list[DataSourceInfo])
+def get_data_sources():
+    """List available lead data sources."""
+    return list_sources()
+
+
+@router.post("/import/{source}", response_model=ImportResult)
+def import_from_source(
+    source: str,
+    file: UploadFile = File(...),
+    show_name: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Import leads from a specific data source (linkedin, alibaba, trade_show, csv)."""
+    try:
+        adapter = get_adapter(source)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    kwargs = {"file": file}
+    if show_name:
+        kwargs["show_name"] = show_name
+
+    rows = adapter.parse(**kwargs)
+    imported = 0
+    duplicates = 0
+    errors = 0
+
+    existing_phones = set()
+    phones = [r.get("phone", "") for r in rows if r.get("phone")]
+    if phones:
+        existing = (
+            db.query(Lead.phone)
+            .filter(Lead.user_id == current_user.id, Lead.phone.in_(phones))
+            .all()
+        )
+        existing_phones = {e[0] for e in existing}
+
+    for row in rows:
+        try:
+            phone = row.get("phone", "")
+            if phone and phone in existing_phones:
+                duplicates += 1
+                continue
+            lead = Lead(
+                name=row.get("name", "Unknown"),
+                company=row.get("company", ""),
+                phone=phone,
+                email=row.get("email", ""),
+                source=row.get("source", source),
+                source_url=row.get("source_url", ""),
+                source_detail=row.get("source_detail", {}),
+                industry=row.get("industry", ""),
+                country=row.get("country", ""),
+                profile_data=row.get("profile_data", {}),
+                language=row.get("language", "en"),
+                user_id=current_user.id,
+            )
+            db.add(lead)
+            if phone:
+                existing_phones.add(phone)
+            imported += 1
+        except Exception:
+            errors += 1
+
+    db.commit()
+    return ImportResult(
+        total=len(rows), imported=imported, duplicates=duplicates, errors=errors, source=source
+    )
 
 
 @router.get("/{lead_id}", response_model=LeadResponse)

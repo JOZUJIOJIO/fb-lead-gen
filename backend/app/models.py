@@ -30,6 +30,11 @@ class LeadStatus(str, enum.Enum):
 class LeadSource(str, enum.Enum):
     csv = "csv"
     graph_api = "graph_api"
+    facebook_search = "facebook_search"
+    linkedin = "linkedin"
+    alibaba = "alibaba"
+    trade_show = "trade_show"
+    manual = "manual"
 
 
 class CampaignStatus(str, enum.Enum):
@@ -87,6 +92,9 @@ class Lead(Base):
     email = Column(String(255), default="")
     source = Column(Enum(LeadSource), default=LeadSource.csv)
     source_url = Column(String(500), default="")
+    source_detail = Column(JSON, default=dict)  # e.g. {"platform": "alibaba", "search_query": "..."}
+    industry = Column(String(255), default="")
+    country = Column(String(100), default="")
     profile_data = Column(JSON, default=dict)
     score = Column(Float, default=0)
     status = Column(Enum(LeadStatus), default=LeadStatus.new, index=True)

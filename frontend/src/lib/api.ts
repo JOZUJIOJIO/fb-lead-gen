@@ -1,8 +1,11 @@
 import axios from "axios";
 import type {
+  AnalyticsOverview,
   AuthResponse,
   Campaign,
   CampaignCreateRequest,
+  DataSource,
+  ImportResult,
   Lead,
   LoginRequest,
   Message,
@@ -101,6 +104,23 @@ export const leadsApi = {
     const res = await api.post("/leads/batch-analyze", { ids });
     return res.data;
   },
+  sources: async (): Promise<DataSource[]> => {
+    const res = await api.get("/leads/sources");
+    return res.data;
+  },
+  importFromSource: async (
+    source: string,
+    file: File,
+    showName?: string
+  ): Promise<ImportResult> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (showName) formData.append("show_name", showName);
+    const res = await api.post(`/leads/import/${source}`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  },
 };
 
 // Campaigns
@@ -182,6 +202,14 @@ export const templatesApi = {
   },
   delete: async (id: number): Promise<void> => {
     await api.delete(`/templates/${id}`);
+  },
+};
+
+// Analytics
+export const analyticsApi = {
+  overview: async (): Promise<AnalyticsOverview> => {
+    const res = await api.get("/analytics/overview");
+    return res.data;
   },
 };
 

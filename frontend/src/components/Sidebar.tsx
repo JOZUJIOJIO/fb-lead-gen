@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import {
   ChartBarIcon,
+  ChartPieIcon,
   UsersIcon,
   MegaphoneIcon,
   ChatBubbleLeftRightIcon,
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/campaigns", label: "营销活动", icon: MegaphoneIcon },
   { href: "/messages", label: "消息中心", icon: ChatBubbleLeftRightIcon },
   { href: "/templates", label: "模板管理", icon: DocumentTextIcon },
+  { href: "/analytics", label: "数据分析", icon: ChartPieIcon },
   { href: "/settings", label: "设置", icon: Cog6ToothIcon },
 ];
 
