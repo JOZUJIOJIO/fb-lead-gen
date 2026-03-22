@@ -252,6 +252,7 @@ def analyze_single_lead(
         company=lead.company,
         profile_data=lead.profile_data,
         email=lead.email,
+        user_id=current_user.id,
     )
     lead.score = result["score"]
     lead.ai_analysis = result["analysis"]
@@ -281,6 +282,7 @@ def batch_analyze(
                 company=lead.company,
                 profile_data=lead.profile_data,
                 email=lead.email,
+                user_id=current_user.id,
             )
             lead.score = result["score"]
             lead.ai_analysis = result["analysis"]

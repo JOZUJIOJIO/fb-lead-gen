@@ -71,13 +71,43 @@ def _parse_json_response(text: str) -> dict:
     return json.loads(text)
 
 
+def _load_persona(user_id: int | None = None) -> dict[str, Any] | None:
+    """Load persona config for scoring context."""
+    try:
+        from app.database import SessionLocal
+        from app.models import Persona
+        db = SessionLocal()
+        try:
+            query = db.query(Persona)
+            if user_id:
+                query = query.filter(Persona.user_id == user_id)
+            persona = query.first()
+            if persona:
+                return {
+                    "company_name": persona.company_name or persona.company_name_en or "",
+                    "products": persona.products or "",
+                    "advantages": persona.advantages or [],
+                    "description": persona.company_description or "",
+                }
+        finally:
+            db.close()
+    except Exception:
+        pass
+    return None
+
+
 def analyze_lead(
     name: str,
     company: str,
     profile_data: dict[str, Any],
     email: str = "",
+    user_id: int | None = None,
 ) -> dict:
-    """Analyze a lead using AI and return score, analysis, and detected language."""
+    """Analyze a lead using AI and return score, analysis, and detected language.
+
+    When a Persona is configured, scoring is tailored to the user's specific
+    products and target market instead of using generic criteria.
+    """
     if not settings.kimi_api_key and not settings.anthropic_api_key:
         return {
             "score": 50,
@@ -87,7 +117,34 @@ def analyze_lead(
 
     profile_str = json.dumps(profile_data, ensure_ascii=False) if profile_data else "No additional data"
 
-    prompt = f"""Analyze this potential B2B buyer lead for a Chinese export/foreign trade company.
+    # Build persona-aware context
+    persona = _load_persona(user_id)
+    if persona and (persona.get("company_name") or persona.get("products")):
+        seller_context = f"""Our company information:
+- Company: {persona.get('company_name', '')}
+- Products we sell: {persona.get('products', '')}
+- Our advantages: {json.dumps(persona.get('advantages', []), ensure_ascii=False)}
+- Description: {persona.get('description', '')}
+
+Evaluate whether this lead is a good match for OUR specific products and business."""
+        scoring_criteria = f"""Scoring criteria (tailored to our business):
+- Does their company likely need our products ({persona.get('products', 'N/A')})?
+- Are they in a relevant industry or supply chain for what we sell?
+- Role seniority (decision-maker vs. junior)
+- Geographic market fit for our products
+- Any engagement signals (comments on trade posts, etc.)"""
+    else:
+        seller_context = "Context: A B2B export company wants to evaluate this potential buyer."
+        scoring_criteria = """Scoring criteria:
+- Company relevance to B2B importing/wholesale/distribution
+- Role seniority (decision-maker vs. junior)
+- Industry alignment
+- Geographic market (emerging markets often have stronger demand)
+- Any engagement signals (comments on trade posts, etc.)"""
+
+    prompt = f"""Analyze this potential B2B buyer lead.
+
+{seller_context}
 
 Lead information:
 - Name: {name}
@@ -96,21 +153,16 @@ Lead information:
 - Additional profile data: {profile_str}
 
 Please evaluate this lead and respond in JSON format with these fields:
-1. "score": An intent score from 0-100 indicating how likely this person is a qualified B2B buyer.
-   - 80-100: High priority - clear B2B buyer signals (procurement role, relevant industry, importing company)
-   - 60-79: Medium priority - some buying signals present
+1. "score": An intent score from 0-100 indicating how likely this person is a qualified buyer for our products.
+   - 80-100: High priority - clear buyer signals matching our business
+   - 60-79: Medium priority - some relevant signals present
    - 40-59: Low priority - limited signals but possible buyer
-   - 0-39: Not a likely buyer
-2. "analysis": A 2-3 sentence analysis explaining your scoring rationale. Mention specific signals you identified.
+   - 0-39: Not a likely buyer for our products
+2. "analysis": A 2-3 sentence analysis explaining your scoring rationale. Mention specific signals and how they relate to our business.
 3. "language": The detected primary language of this person (ISO 639-1 code, e.g., "en", "es", "fr", "ar", "pt").
    Detect from their name, company name, and any profile data. Default to "en" if uncertain.
 
-Scoring criteria:
-- Company relevance to B2B importing/wholesale/distribution
-- Role seniority (decision-maker vs. junior)
-- Industry alignment with typical Chinese export goods
-- Geographic market (emerging markets often have stronger demand)
-- Any engagement signals (comments on trade posts, etc.)
+{scoring_criteria}
 
 Respond ONLY with valid JSON, no other text."""
 
@@ -137,6 +189,7 @@ def generate_message(
     lead_data: dict[str, Any],
     template_body: str,
     language: str = "en",
+    user_id: int | None = None,
 ) -> str:
     """Generate a personalized outreach message using AI."""
     if not settings.kimi_api_key and not settings.anthropic_api_key:
@@ -144,9 +197,15 @@ def generate_message(
 
     profile_str = json.dumps(lead_data, ensure_ascii=False) if lead_data else "No additional data"
 
-    prompt = f"""Generate a personalized WhatsApp outreach message for a B2B lead.
+    persona = _load_persona(user_id)
+    if persona and persona.get("company_name"):
+        seller_info = f"Our company: {persona['company_name']}. Products: {persona.get('products', '')}. Advantages: {json.dumps(persona.get('advantages', []), ensure_ascii=False)}"
+    else:
+        seller_info = "A B2B export company"
 
-Context: A Chinese export company wants to connect with this potential buyer via WhatsApp.
+    prompt = f"""Generate a personalized outreach message for a B2B lead.
+
+Context: {seller_info} wants to connect with this potential buyer.
 
 Lead information:
 - Name: {lead_name}
