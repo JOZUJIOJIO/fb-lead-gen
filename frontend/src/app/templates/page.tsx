@@ -128,19 +128,19 @@ export default function TemplatesPage() {
   };
 
   const languageLabels: Record<string, string> = {
-    en: "English",
+    en: "英语",
     zh: "中文",
-    es: "Espanol",
-    ar: "Arabic",
-    pt: "Portugues",
-    fr: "Francais",
-    de: "Deutsch",
-    ja: "日本語",
-    ko: "한국어",
-    th: "ภาษาไทย",
-    vi: "Tieng Viet",
-    id: "Bahasa Indonesia",
-    ms: "Bahasa Melayu",
+    es: "西班牙语",
+    ar: "阿拉伯语",
+    pt: "葡萄牙语",
+    fr: "法语",
+    de: "德语",
+    ja: "日语",
+    ko: "韩语",
+    th: "泰语",
+    vi: "越南语",
+    id: "印尼语",
+    ms: "马来语",
   };
 
   if (authLoading || !user) {
