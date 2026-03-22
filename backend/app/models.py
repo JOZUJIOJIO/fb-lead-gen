@@ -31,7 +31,14 @@ class LeadSource(str, enum.Enum):
     csv = "csv"
     graph_api = "graph_api"
     facebook_search = "facebook_search"
+    instagram = "instagram"
     linkedin = "linkedin"
+    twitter = "twitter"
+    tiktok = "tiktok"
+    youtube = "youtube"
+    reddit = "reddit"
+    telegram_group = "telegram_group"
+    google_maps = "google_maps"
     alibaba = "alibaba"
     trade_show = "trade_show"
     manual = "manual"
@@ -55,9 +62,16 @@ class MessageStatus(str, enum.Enum):
     failed = "failed"
 
 
+class MessageChannel(str, enum.Enum):
+    whatsapp = "whatsapp"
+    telegram = "telegram"
+
+
 class MessageMode(str, enum.Enum):
     click_to_chat = "click_to_chat"
     business_api = "business_api"
+    telegram_link = "telegram_link"
+    telegram_bot = "telegram_bot"
 
 
 class UserPlan(str, enum.Enum):
@@ -90,6 +104,7 @@ class Lead(Base):
     company = Column(String(255), default="")
     phone = Column(String(50), default="")
     email = Column(String(255), default="")
+    telegram_username = Column(String(255), default="")
     source = Column(Enum(LeadSource), default=LeadSource.csv)
     source_url = Column(String(500), default="")
     source_detail = Column(JSON, default=dict)  # e.g. {"platform": "alibaba", "search_query": "..."}

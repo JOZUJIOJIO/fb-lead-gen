@@ -199,6 +199,34 @@ class ManualAdapter(LeadSourceAdapter):
         return [lead_data]
 
 
+class PlatformExportAdapter(LeadSourceAdapter):
+    """Generic adapter for social platform data exports (Instagram, Twitter, TikTok, etc.).
+
+    Most platforms allow exporting follower/engagement data as CSV.
+    This adapter wraps CSVAdapter and tags with the correct source.
+    """
+
+    def __init__(self, platform: str):
+        self.source_name = platform
+
+    def parse(self, *, file: UploadFile, **kwargs) -> list[dict[str, Any]]:
+        csv_adapter = CSVAdapter()
+        rows = csv_adapter.parse(file=file)
+        for row in rows:
+            row["source"] = self.source_name
+            row["source_detail"] = {
+                "platform": self.source_name,
+                "filename": file.filename or "",
+            }
+            # Try to extract telegram_username if present
+            pd = row.get("profile_data", {})
+            for key in ("telegram", "telegram_username", "tg_username"):
+                if key in pd and pd[key]:
+                    row["telegram_username"] = str(pd[key]).lstrip("@")
+                    break
+        return rows
+
+
 # Registry
 ADAPTERS: dict[str, type[LeadSourceAdapter]] = {
     "csv": CSVAdapter,
@@ -207,6 +235,18 @@ ADAPTERS: dict[str, type[LeadSourceAdapter]] = {
     "trade_show": TradeShowAdapter,
     "manual": ManualAdapter,
 }
+
+# Platform adapters (generated from PlatformExportAdapter)
+PLATFORM_SOURCES = [
+    "instagram", "twitter", "tiktok", "youtube",
+    "reddit", "telegram_group", "google_maps",
+]
+for _platform in PLATFORM_SOURCES:
+    ADAPTERS[_platform] = type(
+        f"{_platform.title()}Adapter",
+        (PlatformExportAdapter,),
+        {"__init__": lambda self, p=_platform: PlatformExportAdapter.__init__(self, p)},
+    )
 
 
 def get_adapter(source: str) -> LeadSourceAdapter:
@@ -220,9 +260,17 @@ def get_adapter(source: str) -> LeadSourceAdapter:
 def list_sources() -> list[dict[str, str]]:
     """Return available data sources with metadata."""
     return [
-        {"id": "csv", "name": "CSV / Excel", "description": "Upload CSV or Excel file"},
-        {"id": "linkedin", "name": "LinkedIn", "description": "LinkedIn Sales Navigator export"},
-        {"id": "alibaba", "name": "Alibaba International", "description": "Alibaba buyer inquiry export"},
-        {"id": "trade_show", "name": "Trade Show", "description": "Exhibition attendee list"},
-        {"id": "manual", "name": "Manual Entry", "description": "Add lead manually"},
+        {"id": "csv", "name": "CSV / Excel", "description": "通用 CSV 或 Excel 文件导入"},
+        {"id": "facebook_search", "name": "Facebook", "description": "Facebook 搜索或主页数据导出"},
+        {"id": "instagram", "name": "Instagram", "description": "Instagram 粉丝或互动数据导出"},
+        {"id": "linkedin", "name": "LinkedIn", "description": "LinkedIn Sales Navigator 导出"},
+        {"id": "twitter", "name": "Twitter / X", "description": "Twitter/X 粉丝或互动数据导出"},
+        {"id": "tiktok", "name": "TikTok", "description": "TikTok 粉丝或评论数据导出"},
+        {"id": "youtube", "name": "YouTube", "description": "YouTube 频道订阅者或评论导出"},
+        {"id": "reddit", "name": "Reddit", "description": "Reddit 帖子互动用户数据导出"},
+        {"id": "telegram_group", "name": "Telegram 群组", "description": "Telegram 群组成员导出"},
+        {"id": "google_maps", "name": "Google Maps", "description": "Google Maps 商户信息导出"},
+        {"id": "alibaba", "name": "阿里国际站", "description": "阿里巴巴国际站买家询盘导出"},
+        {"id": "trade_show", "name": "展会", "description": "展会参会者名单"},
+        {"id": "manual", "name": "手动录入", "description": "手动添加单条线索"},
     ]

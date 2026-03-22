@@ -38,6 +38,7 @@ class LeadCreate(BaseModel):
     company: str = ""
     phone: str = ""
     email: str = ""
+    telegram_username: str = ""
     source: str = "csv"
     source_url: str = ""
     source_detail: dict[str, Any] = {}
@@ -65,6 +66,7 @@ class LeadResponse(BaseModel):
     email: str
     source: str
     source_url: str
+    telegram_username: str = ""
     source_detail: dict[str, Any] = {}
     industry: str = ""
     country: str = ""

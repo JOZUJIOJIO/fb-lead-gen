@@ -4,6 +4,7 @@ import time
 from app.database import SessionLocal
 from app.models import Lead, LeadStatus, Message, MessageStatus, Suppression
 from app.services.ai_engine import analyze_lead
+from app.services.telegram import generate_telegram_link
 from app.services.whatsapp import generate_click_to_chat_link
 from app.tasks.celery_app import celery_app
 
@@ -73,7 +74,10 @@ def send_messages_task(self, message_ids: list[int]):
                 continue
 
             try:
-                msg.click_to_chat_link = generate_click_to_chat_link(lead.phone, msg.content)
+                if msg.channel == "telegram" and lead.telegram_username:
+                    msg.click_to_chat_link = generate_telegram_link(lead.telegram_username, msg.content)
+                else:
+                    msg.click_to_chat_link = generate_click_to_chat_link(lead.phone, msg.content)
                 msg.status = MessageStatus.sent
                 db.commit()
                 sent += 1

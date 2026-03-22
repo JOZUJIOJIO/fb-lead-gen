@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     whatsapp_business_token: str = ""
     whatsapp_phone_number_id: str = ""
 
+    # Telegram
+    telegram_bot_token: str = ""
+
     # Facebook
     facebook_app_id: str = ""
     facebook_app_secret: str = ""

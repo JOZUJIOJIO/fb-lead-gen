@@ -31,10 +31,17 @@ const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"
 
 const SOURCE_LABELS: Record<string, string> = {
   csv: "CSV/Excel",
+  facebook_search: "Facebook",
+  instagram: "Instagram",
   linkedin: "LinkedIn",
+  twitter: "Twitter/X",
+  tiktok: "TikTok",
+  youtube: "YouTube",
+  reddit: "Reddit",
+  telegram_group: "Telegram 群组",
+  google_maps: "Google Maps",
   alibaba: "阿里国际站",
   trade_show: "展会",
-  facebook_search: "Facebook 搜索",
   graph_api: "Graph API",
   manual: "手动录入",
 };

@@ -42,3 +42,4 @@ coverage/
 .leadflow/
 mcp-server/__pycache__/
 mcp-server/persona.json
+.gstack/
