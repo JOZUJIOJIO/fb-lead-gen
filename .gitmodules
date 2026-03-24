@@ -1,0 +1,3 @@
+[submodule "opencli-vendor"]
+	path = opencli-vendor
+	url = https://github.com/jackwener/opencli.git

@@ -13,12 +13,50 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
+
+import logging
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-from browser_agent import FacebookBrowser, find_customers, ai_analyze_profiles
+logger = logging.getLogger(__name__)
+
+# 优先使用 OpenCLI（复用 Chrome 登录态），连不上则回退 Playwright
+import browser_agent_opencli
+import browser_agent as browser_agent_playwright
+
+_browser_backend = "auto"  # "opencli", "playwright", "auto"
+
+
+def _get_browser_module():
+    """根据可用性选择浏览器后端。"""
+    global _browser_backend
+    if _browser_backend == "playwright":
+        return browser_agent_playwright
+    if _browser_backend == "opencli":
+        return browser_agent_opencli
+
+    # auto: 先检查 opencli CLI 是否安装（同步，快速）
+    if browser_agent_opencli._opencli_available():
+        return browser_agent_opencli
+
+    return browser_agent_playwright
+
+
+def _get_FacebookBrowser():
+    return _get_browser_module().FacebookBrowser
+
+
+def _get_find_customers():
+    return _get_browser_module().find_customers
+
+
+def _get_ai_analyze_profiles():
+    return _get_browser_module().ai_analyze_profiles
+
+
 from conversation_engine import (
     ConversationState,
     generate_opening_message,
@@ -362,7 +400,7 @@ def login_facebook(email: str, password: str) -> str:
     注意：如果有两步验证，可能需要手动处理。
     """
     async def _login():
-        fb = FacebookBrowser()
+        fb = _get_FacebookBrowser()()
         try:
             await fb.start(headless=False)  # 首次登录用有头模式，方便处理验证码
             if await fb.is_logged_in():
@@ -405,7 +443,7 @@ def facebook_find_customers(
       → query="textile import wholesale", search_type="groups"
     """
     async def _search():
-        result = await find_customers(
+        result = await _get_find_customers()(
             query=query,
             search_type=search_type,
             max_results=max_results,
@@ -494,7 +532,7 @@ def facebook_explore_group(
     示例: "进入这个LED灯具采购群，看看里面有哪些活跃买家"
     """
     async def _explore():
-        fb = FacebookBrowser()
+        fb = _get_FacebookBrowser()()
         try:
             await fb.start(headless=True)
             if not await fb.is_logged_in():
@@ -505,7 +543,7 @@ def facebook_explore_group(
                 return "未能提取群组成员。可能需要先加入该群组。"
 
             # AI 分析
-            members = await ai_analyze_profiles(members, f"Group: {group_url}")
+            members = await _get_ai_analyze_profiles()(members, f"Group: {group_url}")
 
             # 导入
             imported = 0
@@ -549,7 +587,7 @@ def facebook_visit_profile(profile_url: str) -> str:
     用于深入了解某个特定的潜在客户。
     """
     async def _visit():
-        fb = FacebookBrowser()
+        fb = _get_FacebookBrowser()()
         try:
             await fb.start(headless=True)
             if not await fb.is_logged_in():
@@ -610,7 +648,7 @@ def start_conversation(
         opening = generate_opening_message(state)
 
         # 通过浏览器发送 Facebook 私信
-        fb = FacebookBrowser()
+        fb = _get_FacebookBrowser()()
         try:
             await fb.start(headless=True)
             if not await fb.is_logged_in():
@@ -666,7 +704,7 @@ def check_replies(lead_id: int, profile_url: str) -> str:
                 + ("✅ WhatsApp已推送" if state.whatsapp_sent else "❌ 未完成私域引导")
             )
 
-        fb = FacebookBrowser()
+        fb = _get_FacebookBrowser()()
         try:
             await fb.start(headless=True)
             if not await fb.is_logged_in():
@@ -745,7 +783,7 @@ def manual_reply(lead_id: int, profile_url: str, message: str) -> str:
         if not state:
             state = ConversationState(lead_id=str(lead_id), lead_name=f"Lead-{lead_id}")
 
-        fb = FacebookBrowser()
+        fb = _get_FacebookBrowser()()
         try:
             await fb.start(headless=True)
             if not await fb.is_logged_in():
@@ -870,7 +908,7 @@ def full_pipeline(
 
         # Step 1: Facebook 搜索
         lines.append("📡 Step 1/4: 在 Facebook 搜索目标客户...")
-        search_result = await find_customers(
+        search_result = await _get_find_customers()(
             query=keyword,
             search_type="all",
             max_results=20,
@@ -944,7 +982,7 @@ def full_pipeline(
         if auto_dm:
             lines.append(f"\n💬 Step 4/4: 给 Top {min(max_dm, len(qualified))} 客户发 Facebook 私信...")
 
-            fb = FacebookBrowser()
+            fb = _get_FacebookBrowser()()
             dm_sent = 0
             try:
                 await fb.start(headless=True)
@@ -1277,6 +1315,75 @@ def update_persona(
 
 
 # ============================================================
+# 浏览器后端管理
+# ============================================================
+
+
+@mcp.tool()
+def browser_status() -> str:
+    """查看当前浏览器后端状态。
+
+    显示当前使用的是 OpenCLI（复用Chrome登录态）还是 Playwright（独立浏览器）。
+    """
+    async def _status():
+        opencli_ready = await browser_agent_opencli.is_opencli_ready()
+        pw_available = True
+        try:
+            import playwright
+        except ImportError:
+            pw_available = False
+
+        current = "auto"
+        if _browser_backend != "auto":
+            current = _browser_backend
+        elif opencli_ready:
+            current = "opencli (auto)"
+        else:
+            current = "playwright (auto fallback)"
+
+        lines = [
+            f"🔧 浏览器后端状态\n",
+            f"当前模式: {current}",
+            f"",
+            f"OpenCLI:    {'✅ 就绪' if opencli_ready else '❌ 未连接'}",
+            f"  - 复用 Chrome 已登录的 Facebook，不易被检测",
+            f"  - 需要: Chrome + OpenCLI 扩展",
+            f"",
+            f"Playwright: {'✅ 已安装' if pw_available else '❌ 未安装'}",
+            f"  - 启动独立浏览器，需要重新登录 Facebook",
+            f"  - 备选方案",
+        ]
+
+        if not opencli_ready:
+            lines.extend([
+                f"",
+                f"💡 推荐安装 OpenCLI:",
+                f"  npm install -g @jackwener/opencli",
+                f"  然后在 Chrome 中安装 Browser Bridge 扩展",
+            ])
+
+        return "\n".join(lines)
+
+    return asyncio.run(_status())
+
+
+@mcp.tool()
+def switch_browser_backend(backend: str = "auto") -> str:
+    """切换浏览器后端。
+
+    可选:
+    - "auto": 自动选择（优先 OpenCLI）
+    - "opencli": 强制使用 OpenCLI（复用 Chrome）
+    - "playwright": 强制使用 Playwright（独立浏览器）
+    """
+    global _browser_backend
+    if backend not in ("auto", "opencli", "playwright"):
+        return f"❌ 无效的后端: {backend}。可选: auto, opencli, playwright"
+    _browser_backend = backend
+    return f"✅ 浏览器后端已切换为: {backend}"
+
+
+# ============================================================
 # 启动
 # ============================================================
 
@@ -1284,5 +1391,11 @@ if __name__ == "__main__":
     print("🦞 LeadFlow MCP Server starting...")
     print(f"   Backend: {LEADFLOW_BASE_URL}")
     print(f"   Account: {LEADFLOW_EMAIL}")
+
+    # 检测浏览器后端
+    import asyncio as _aio
+    _opencli_ok = _aio.run(browser_agent_opencli.is_opencli_ready())
+    print(f"   Browser: {'OpenCLI (Chrome)' if _opencli_ok else 'Playwright (fallback)'}")
+
     print("   Ready for OpenClaw connection.")
     mcp.run(transport="stdio")

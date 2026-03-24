@@ -12,17 +12,28 @@ Facebook-to-WhatsApp AI Lead Generation Platform for B2B Sales.
 | 前端 | Next.js 14 + TypeScript + Tailwind CSS |
 | 数据库 | PostgreSQL 16 + Redis 7 |
 | AI | Kimi (Moonshot) / Anthropic Claude |
-| 自动化 | Playwright (Facebook 浏览器自动化) |
+| 浏览器自动化 | **OpenCLI**（优先，复用 Chrome 登录态）/ Playwright（备选） |
 | 部署 | Docker Compose |
+
+## 浏览器自动化方案
+
+系统支持两种浏览器控制方案，**自动选择最优方案**：
+
+| | OpenCLI（推荐） | Playwright（备选） |
+|--|-----------------|-------------------|
+| 原理 | 控制你已打开的 Chrome | 启动独立的 Chromium |
+| Facebook 登录 | 复用已登录状态，无需重新登录 | 需要重新登录，容易触发验证 |
+| 被检测风险 | 低（真实浏览器环境） | 高（自动化指纹明显） |
+| 额外下载 | 无 | Chromium ~400MB |
+| 需要 | Chrome + Browser Bridge 扩展 | Python + Playwright |
 
 ## 快速开始
 
 ### 前提条件
 
-- macOS (已测试)
 - Docker Desktop
 - Python 3.10+
-- Node.js 18+
+- Node.js 18+（用于 OpenCLI）
 
 ### 一键部署
 
@@ -33,12 +44,29 @@ bash setup.sh
 ```
 
 `setup.sh` 会自动完成：
-1. 检查系统依赖 (Homebrew, Python, Node, Docker)
+1. 检查系统依赖 (Python, Node, Docker)
 2. 启动 PostgreSQL + Redis (Docker)
 3. 安装后端 Python 依赖
 4. 创建 `.env` 并自动生成 `SECRET_KEY`
 5. 安装前端 Node 依赖
-6. 安装 MCP Server + Playwright 浏览器引擎
+6. 安装 MCP Server 依赖
+
+### 安装 OpenCLI（推荐）
+
+```bash
+# 1. 安装 OpenCLI CLI
+npm install -g @jackwener/opencli
+
+# 2. 在 Chrome 中安装 Browser Bridge 扩展
+#    下载: opencli-vendor/extension/ 目录，在 Chrome 中加载未打包扩展
+
+# 3. 验证安装
+opencli doctor
+```
+
+安装后，系统会自动使用 OpenCLI 控制你已登录 Facebook 的 Chrome 浏览器。
+
+如果不安装 OpenCLI，系统会自动回退到 Playwright（需要单独登录 Facebook）。
 
 ### 启动服务
 
@@ -62,31 +90,33 @@ bash start.sh stop   # 停止所有服务
 
 ```
 fb-lead-gen/
-├── backend/                 # FastAPI 后端
+├── backend/                    # FastAPI 后端
 │   ├── app/
-│   │   ├── main.py          # 入口 + 自动建表 + 账号 seed
-│   │   ├── models.py        # SQLAlchemy 数据模型
-│   │   ├── routers/         # API 路由 (auth, leads, campaigns...)
-│   │   ├── services/        # 业务逻辑 (AI, WhatsApp, Facebook, CSV)
-│   │   └── tasks/           # Celery 异步任务
-│   ├── .env.example         # 环境变量模板
+│   │   ├── main.py             # 入口 + 自动建表 + 账号 seed
+│   │   ├── models.py           # SQLAlchemy 数据模型
+│   │   ├── routers/            # API 路由 (auth, leads, campaigns...)
+│   │   ├── services/           # 业务逻辑 (AI, WhatsApp, Facebook, CSV)
+│   │   └── tasks/              # Celery 异步任务
+│   ├── .env.example            # 环境变量模板
 │   ├── requirements.txt
 │   └── Dockerfile
-├── frontend/                # Next.js 前端
+├── frontend/                   # Next.js 前端
 │   ├── src/
-│   │   ├── app/             # 页面 (仪表盘, 线索, 对话, 营销...)
-│   │   ├── components/      # 通用组件
-│   │   └── lib/             # API 客户端 + 认证
+│   │   ├── app/                # 页面 (仪表盘, 线索, 对话, 营销...)
+│   │   ├── components/         # 通用组件
+│   │   └── lib/                # API 客户端 + 认证
 │   └── package.json
-├── mcp-server/              # MCP 集成层
-│   ├── server.py            # FastMCP 服务 (OpenClaw 集成)
-│   ├── browser_agent.py     # Facebook 浏览器自动化
+├── mcp-server/                 # MCP 集成层
+│   ├── server.py               # FastMCP 服务 (OpenClaw 集成)
+│   ├── browser_agent_opencli.py  # Facebook 浏览器自动化 (OpenCLI 版，优先)
+│   ├── browser_agent.py        # Facebook 浏览器自动化 (Playwright 版，备选)
 │   ├── conversation_engine.py  # 多轮对话引擎
-│   ├── auto_poller.py       # 自动回复轮询
-│   └── persona.example.json # 对话人设模板
-├── docker-compose.yml       # Docker 编排
-├── setup.sh                 # 一键部署脚本
-└── start.sh                 # 一键启动脚本
+│   ├── auto_poller.py          # 自动回复轮询
+│   └── persona.example.json    # 对话人设模板
+├── opencli-vendor/             # OpenCLI 源码（浏览器控制引擎）
+├── docker-compose.yml          # Docker 编排
+├── setup.sh                    # 一键部署脚本
+└── start.sh                    # 一键启动脚本
 ```
 
 ## 环境变量
