@@ -6,13 +6,18 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     secret_key: str = "dev-secret-key-change-in-production"
 
-    # AI Provider: "kimi" or "anthropic"
+    # AI Provider: "kimi", "openai", or "anthropic"
     ai_provider: str = "kimi"
 
     # Kimi 2.5 (Moonshot AI) - OpenAI compatible API
     kimi_api_key: str = ""
     kimi_base_url: str = "https://api.moonshot.cn/v1"
     kimi_model: str = "kimi-latest"
+
+    # OpenAI GPT / Codex
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4o"
 
     # Anthropic Claude (optional fallback)
     anthropic_api_key: str = ""

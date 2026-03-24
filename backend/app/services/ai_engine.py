@@ -47,20 +47,46 @@ def _call_anthropic(prompt: str, max_tokens: int = 500) -> str:
     return message.content[0].text.strip()
 
 
+def _call_openai(prompt: str, max_tokens: int = 500) -> str:
+    """Call OpenAI GPT / Codex API (works with any OpenAI-compatible endpoint)."""
+    url = f"{settings.openai_base_url}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.openai_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.openai_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": 0.7,
+    }
+    with httpx.Client(timeout=60) as client:
+        response = client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"].strip()
+
+
 def _call_ai(prompt: str, max_tokens: int = 500) -> str:
     """Route to configured AI provider."""
     provider = settings.ai_provider.lower()
 
+    # 按指定 provider 优先
     if provider == "kimi" and settings.kimi_api_key:
         return _call_kimi(prompt, max_tokens)
+    elif provider == "openai" and settings.openai_api_key:
+        return _call_openai(prompt, max_tokens)
     elif provider == "anthropic" and settings.anthropic_api_key:
         return _call_anthropic(prompt, max_tokens)
+    # 自动回退：按优先级尝试所有可用的
+    elif settings.openai_api_key:
+        return _call_openai(prompt, max_tokens)
     elif settings.kimi_api_key:
         return _call_kimi(prompt, max_tokens)
     elif settings.anthropic_api_key:
         return _call_anthropic(prompt, max_tokens)
     else:
-        raise ValueError("No AI API key configured. Set KIMI_API_KEY or ANTHROPIC_API_KEY.")
+        raise ValueError("No AI API key configured. Set OPENAI_API_KEY, KIMI_API_KEY, or ANTHROPIC_API_KEY.")
 
 
 def _parse_json_response(text: str) -> dict:
@@ -108,7 +134,7 @@ def analyze_lead(
     When a Persona is configured, scoring is tailored to the user's specific
     products and target market instead of using generic criteria.
     """
-    if not settings.kimi_api_key and not settings.anthropic_api_key:
+    if not settings.kimi_api_key and not settings.openai_api_key and not settings.anthropic_api_key:
         return {
             "score": 50,
             "analysis": "AI analysis unavailable — no API key configured. Set KIMI_API_KEY or ANTHROPIC_API_KEY.",
@@ -192,7 +218,7 @@ def generate_message(
     user_id: int | None = None,
 ) -> str:
     """Generate a personalized outreach message using AI."""
-    if not settings.kimi_api_key and not settings.anthropic_api_key:
+    if not settings.kimi_api_key and not settings.openai_api_key and not settings.anthropic_api_key:
         return template_body.replace("{{name}}", lead_name).replace("{{company}}", lead_company)
 
     profile_str = json.dumps(lead_data, ensure_ascii=False) if lead_data else "No additional data"
