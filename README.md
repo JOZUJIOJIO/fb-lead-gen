@@ -25,47 +25,25 @@ Facebook-to-WhatsApp AI Lead Generation Platform for B2B Sales.
 - Node.js 18+（用于 OpenCLI 浏览器代理）
 - Python 3.10+（用于 MCP Server）
 
-### 第一步：启动 Web 应用（Docker 一键搞定）
+### 安装（一条命令）
 
 ```bash
-# 克隆仓库（含 OpenCLI 子模块）
 git clone --recurse-submodules https://github.com/JOZUJIOJIO/fb-lead-gen.git
 cd fb-lead-gen
-
-# 运行配置向导（问你几个问题，自动生成配置）
-bash configure.sh
-
-# 一键启动全部服务
-docker compose up -d
+bash one-click-setup.sh
 ```
 
-启动后访问：
-- 网页界面: http://localhost:3000
-- API 文档: http://localhost:8000/docs
-- 账号: `admin@leadflow.com` / `admin123456`
+脚本会一步步引导你：检查环境 → 粘贴 AI 密钥 → 自动启动全部服务 → 安装浏览器控制工具。
 
-### 第二步：安装浏览器代理（本机运行）
+完成后打开 http://localhost:3000 就能用了。
 
-```bash
-bash install-agent.sh
-```
-
-这个脚本自动安装：
-1. OpenCLI CLI 工具
-2. MCP Server Python 依赖
-3. 人设配置文件
-
-安装后还需要手动在 Chrome 中加载 Browser Bridge 扩展：
-1. 打开 Chrome → `chrome://extensions/`
-2. 开启「开发者模式」
-3. 「加载已解压的扩展程序」→ 选择 `opencli-vendor/extension/` 目录
-
-验证：`opencli doctor`
+- 账号: `admin@leadflow.com`
+- 密码: `admin123456`
 
 ### 日常使用
 
 ```bash
-docker compose up -d      # 启动 Web 应用
+docker compose up -d      # 启动
 docker compose down        # 停止
 docker compose logs -f     # 查看日志
 ```
