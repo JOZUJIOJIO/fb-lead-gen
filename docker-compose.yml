@@ -1,16 +1,22 @@
 version: "3.8"
 
 services:
+  # --- 数据库 ---
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: leadflow
       POSTGRES_USER: leadflow
-      POSTGRES_PASSWORD: leadflow_dev_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leadflow_dev_password}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leadflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -18,52 +24,62 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
+  # --- 后端 API ---
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://leadflow:leadflow_dev_password@postgres:5432/leadflow
+      # Docker 内部地址（覆盖 .env 中的 localhost）
+      DATABASE_URL: postgresql://leadflow:${POSTGRES_PASSWORD:-leadflow_dev_password}@postgres:5432/leadflow
       REDIS_URL: redis://redis:6379/0
-      AI_PROVIDER: ${AI_PROVIDER:-kimi}
-      KIMI_API_KEY: ${KIMI_API_KEY}
-      KIMI_BASE_URL: ${KIMI_BASE_URL:-https://api.moonshot.cn/v1}
-      KIMI_MODEL: ${KIMI_MODEL:-kimi-latest}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      WHATSAPP_BUSINESS_TOKEN: ${WHATSAPP_BUSINESS_TOKEN:-}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
     depends_on:
-      - postgres
-      - redis
-    volumes:
-      - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
+  # --- Celery Worker（异步任务）---
   celery_worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://leadflow:leadflow_dev_password@postgres:5432/leadflow
+      DATABASE_URL: postgresql://leadflow:${POSTGRES_PASSWORD:-leadflow_dev_password}@postgres:5432/leadflow
       REDIS_URL: redis://redis:6379/0
-      AI_PROVIDER: ${AI_PROVIDER:-kimi}
-      KIMI_API_KEY: ${KIMI_API_KEY}
-      KIMI_BASE_URL: ${KIMI_BASE_URL:-https://api.moonshot.cn/v1}
-      KIMI_MODEL: ${KIMI_MODEL:-kimi-latest}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      WHATSAPP_BUSINESS_TOKEN: ${WHATSAPP_BUSINESS_TOKEN:-}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
     depends_on:
-      - postgres
-      - redis
-    volumes:
-      - ./backend:/app
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: celery -A app.tasks.celery_app worker --loglevel=info
+    restart: unless-stopped
+
+  # --- 前端 ---
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   postgres_data:
