@@ -77,26 +77,33 @@ git clone --recurse-submodules https://github.com/JOZUJIOJIO/fb-lead-gen.git
 # 2. 进入项目文件夹
 cd fb-lead-gen
 
-# 3. 创建配置文件
-cp backend/.env.example backend/.env
+# 3. 运行配置向导（它会问你几个问题，自动生成配置）
+bash configure.sh
 ```
 
-### 编辑配置文件
+### 配置向导会做什么？
 
-用任意文本编辑器打开 `backend/.env` 文件，找到这几行并修改：
+运行后它会在终端里一步步问你：
 
 ```
-# 把 sk-xxx 替换成你刚才获取的 Kimi API Key
-KIMI_API_KEY=sk-你的真实Key粘贴在这里
+╔══════════════════════════════════════╗
+║     LeadFlow AI — 配置向导          ║
+║     回答几个问题就能用了            ║
+╚══════════════════════════════════════╝
 
-# 把这行改成一个随机字符串（随便打一串字母数字就行）
-SECRET_KEY=随便打一串比如abc123def456ghi789
+第 1 步：填写 AI 密钥（必填）
+  请粘贴你的 Kimi API Key: sk-xxxxx  ← 把你的 Key 粘贴在这里，回车
+
+第 2 步：WhatsApp 配置（可选）
+  ← 没有就直接回车跳过
+
+第 3 步：自动生成安全密钥...
+  ✅ 已自动生成
+
+✅ 配置完成！
 ```
 
-其他的不用改。保存文件。
-
-> Mac 上可以用 `nano backend/.env` 编辑，改完按 Ctrl+X → Y → Enter 保存。
-> Windows 上可以用记事本打开这个文件。
+你只需要粘贴一个 API Key，其他全自动。
 
 ### 启动！
 

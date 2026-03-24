@@ -32,9 +32,8 @@ Facebook-to-WhatsApp AI Lead Generation Platform for B2B Sales.
 git clone --recurse-submodules https://github.com/JOZUJIOJIO/fb-lead-gen.git
 cd fb-lead-gen
 
-# 配置 API Key
-cp backend/.env.example backend/.env
-# 编辑 backend/.env，填入你的 KIMI_API_KEY（必填）
+# 运行配置向导（问你几个问题，自动生成配置）
+bash configure.sh
 
 # 一键启动全部服务
 docker compose up -d
