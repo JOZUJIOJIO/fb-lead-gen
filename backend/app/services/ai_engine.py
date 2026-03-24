@@ -40,7 +40,7 @@ def _call_anthropic(prompt: str, max_tokens: int = 500) -> str:
     if _anthropic_client is None:
         _anthropic_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     message = _anthropic_client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6-20260320",
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )

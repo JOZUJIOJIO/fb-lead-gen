@@ -102,7 +102,7 @@ SECRET_KEY=${SECRET}
 AI_PROVIDER=kimi
 KIMI_API_KEY=${KIMI_KEY}
 KIMI_BASE_URL=https://api.moonshot.cn/v1
-KIMI_MODEL=kimi-latest
+KIMI_MODEL=kimi-k2.5
 
 # Anthropic Claude (optional)
 ANTHROPIC_API_KEY=

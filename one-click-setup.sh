@@ -132,9 +132,9 @@ if [ "$SKIP_CONFIG" != "true" ]; then
     echo ""
     echo "  系统需要一个 AI 来分析客户画像。请选择你要用的 AI："
     echo ""
-    echo -e "  ${BOLD}[1] Kimi（月之暗面）${NC}— 国内用户推荐，中文能力强，注册送免费额度"
-    echo -e "  ${BOLD}[2] OpenAI（GPT-4o）${NC}— 海外用户推荐，英文能力最强"
-    echo -e "  ${BOLD}[3] Anthropic（Claude）${NC}— 海外备选"
+    echo -e "  ${BOLD}[1] Kimi K2.5（月之暗面）${NC}— 国内用户推荐，性价比最高，注册送免费额度"
+    echo -e "  ${BOLD}[2] OpenAI GPT-5.4${NC}    — 海外用户推荐，综合能力最强"
+    echo -e "  ${BOLD}[3] Anthropic Claude${NC}   — 海外备选，推理能力强"
     echo ""
 
     while true; do
@@ -206,15 +206,15 @@ if [ "$SKIP_CONFIG" != "true" ]; then
         # 选择模型
         echo ""
         echo "  选择模型："
-        echo -e "  ${BOLD}[1] gpt-4o${NC}     — 最强，推荐（默认）"
-        echo -e "  ${BOLD}[2] gpt-4o-mini${NC} — 更快更便宜"
-        echo -e "  ${BOLD}[3] o3-mini${NC}     — 推理能力强"
+        echo -e "  ${BOLD}[1] gpt-5.4${NC}      — 最强旗舰（默认）"
+        echo -e "  ${BOLD}[2] gpt-5.4-mini${NC} — 更快更便宜，推荐"
+        echo -e "  ${BOLD}[3] gpt-5.4-nano${NC} — 最便宜，适合大量调用"
         echo ""
-        read -p "  输入 1/2/3（直接回车选 1）: " MODEL_CHOICE
+        read -p "  输入 1/2/3（直接回车选 2）: " MODEL_CHOICE
         case "$MODEL_CHOICE" in
-            2) OPENAI_MODEL="gpt-4o-mini";;
-            3) OPENAI_MODEL="o3-mini";;
-            *) OPENAI_MODEL="gpt-4o";;
+            1) OPENAI_MODEL="gpt-5.4";;
+            3) OPENAI_MODEL="gpt-5.4-nano";;
+            *) OPENAI_MODEL="gpt-5.4-mini";;
         esac
         ok "使用模型: $OPENAI_MODEL"
 
@@ -261,15 +261,15 @@ SECRET_KEY=${SECRET}
 
 AI_PROVIDER=${AI_PROVIDER}
 
-# Kimi (月之暗面)
+# Kimi K2.5 (月之暗面)
 KIMI_API_KEY=${KIMI_KEY}
 KIMI_BASE_URL=https://api.moonshot.cn/v1
-KIMI_MODEL=kimi-latest
+KIMI_MODEL=kimi-k2.5
 
-# OpenAI GPT / Codex
+# OpenAI GPT-5.4
 OPENAI_API_KEY=${OPENAI_KEY}
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.4-mini}
 
 # Anthropic Claude
 ANTHROPIC_API_KEY=${ANTHROPIC_KEY}

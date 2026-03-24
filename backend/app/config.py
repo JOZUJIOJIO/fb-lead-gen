@@ -9,17 +9,17 @@ class Settings(BaseSettings):
     # AI Provider: "kimi", "openai", or "anthropic"
     ai_provider: str = "kimi"
 
-    # Kimi 2.5 (Moonshot AI) - OpenAI compatible API
+    # Kimi K2.5 (Moonshot AI) - OpenAI compatible API
     kimi_api_key: str = ""
     kimi_base_url: str = "https://api.moonshot.cn/v1"
-    kimi_model: str = "kimi-latest"
+    kimi_model: str = "kimi-k2.5"
 
-    # OpenAI GPT / Codex
+    # OpenAI GPT-5.4
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
-    openai_model: str = "gpt-4o"
+    openai_model: str = "gpt-5.4-mini"
 
-    # Anthropic Claude (optional fallback)
+    # Anthropic Claude
     anthropic_api_key: str = ""
 
     # WhatsApp

@@ -33,7 +33,7 @@ DAEMON_HEADERS = {"X-OpenCLI": "1", "Content-Type": "application/json"}
 
 KIMI_API_KEY = os.environ.get("KIMI_API_KEY", "")
 KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
-KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-latest")
+KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-k2.5")
 
 
 # ============================================================
