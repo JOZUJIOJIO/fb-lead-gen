@@ -4,6 +4,8 @@ Facebook-to-WhatsApp AI Lead Generation Platform for B2B Sales.
 
 通过 Facebook 自动化搜索潜在客户，AI 分析画像并进行多轮对话，最终推送到 WhatsApp 完成获客转化。
 
+> **第一次安装？** 请看 **[完整安装指南 (SETUP-GUIDE.md)](SETUP-GUIDE.md)** — 保姆级教程，非技术人员也能看懂。
+
 ## 技术栈
 
 | 层级 | 技术 |
