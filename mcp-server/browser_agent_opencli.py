@@ -128,7 +128,7 @@ async def _ensure_daemon() -> bool:
 # AI 辅助（复用 browser_agent 的逻辑）
 # ============================================================
 
-def _get_ai_config() -> tuple[str, str, str] | None:
+def _get_ai_config():
     """返回可用的 AI 配置 (api_key, base_url, model)，按 AI_PROVIDER 优先。"""
     provider = AI_PROVIDER.lower()
     configs = {

@@ -59,7 +59,7 @@ OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o")
 # AI 辅助：用 Kimi 分析页面内容
 # ============================================================
 
-def _get_ai_config() -> tuple[str, str, str] | None:
+def _get_ai_config():
     """返回可用的 AI 配置 (api_key, base_url, model)，按 AI_PROVIDER 优先。"""
     provider = AI_PROVIDER.lower()
     configs = {
