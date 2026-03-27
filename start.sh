@@ -18,8 +18,10 @@ if [ "$1" = "stop" ]; then
         # 本地进程方式
         lsof -ti :8000 | xargs kill -9 2>/dev/null && echo "  后端已停止" || echo "  后端未运行"
         lsof -ti :3000 | xargs kill -9 2>/dev/null && echo "  前端已停止" || echo "  前端未运行"
+        lsof -ti :3001 | xargs kill -9 2>/dev/null && echo "  自动化 API 已停止" || echo "  自动化 API 未运行"
         pkill -f "celery.*leadflow" 2>/dev/null && echo "  Celery Worker 已停止" || echo "  Celery Worker 未运行"
         pkill -f "auto_poller.py" 2>/dev/null && echo "  轮询器已停止" || echo "  轮询器未运行"
+        pkill -f "http_api.py" 2>/dev/null && echo "  Automation HTTP API 已停止" || echo ""
         echo "  ✅ 已停止（数据库保持运行）"
     fi
     exit 0
@@ -162,6 +164,24 @@ else
     fi
 fi
 
+# 启动 Automation HTTP API（浏览器自动化接口，运行在主机上）
+echo "  启动 Automation API (浏览器自动化)..."
+lsof -ti :3001 | xargs kill -9 2>/dev/null
+cd "$PROJECT_DIR/mcp-server"
+if [ -f http_api.py ]; then
+    python http_api.py &>/tmp/leadflow-automation.log &
+    AUTOMATION_PID=$!
+    sleep 2
+    if curl -s http://localhost:3001/status &>/dev/null 2>&1; then
+        echo "  ✅ 自动化 API: http://localhost:3001"
+    else
+        echo "  ⚠️  自动化 API 启动中，稍等片刻"
+        echo "     查看日志: cat /tmp/leadflow-automation.log"
+    fi
+else
+    echo "  ⚠️  http_api.py 未找到，自动化功能不可用"
+fi
+
 echo ""
 echo "========================================"
 echo "✅ LeadFlow AI 已启动！"
@@ -169,6 +189,7 @@ echo "========================================"
 echo ""
 echo "  🌐 网页界面:  http://localhost:3000"
 echo "  📡 API 文档:  http://localhost:8000/docs"
+echo "  🤖 自动化:    http://localhost:3001"
 echo "  📧 账号:      admin@leadflow.com"
 echo "  🔑 密码:      admin123456"
 echo ""

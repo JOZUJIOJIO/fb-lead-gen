@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import {
+  BoltIcon,
   ChartBarIcon,
   ChartPieIcon,
   UsersIcon,
@@ -19,6 +20,7 @@ import { useAuth } from "@/lib/auth";
 
 const navItems = [
   { href: "/", label: "仪表盘", icon: ChartBarIcon },
+  { href: "/automation", label: "自动化", icon: BoltIcon },
   { href: "/leads", label: "线索管理", icon: UsersIcon },
   { href: "/conversations", label: "对话管理", icon: ChatBubbleOvalLeftEllipsisIcon },
   { href: "/campaigns", label: "营销活动", icon: MegaphoneIcon },

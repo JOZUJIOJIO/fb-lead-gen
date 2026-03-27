@@ -175,3 +175,37 @@ export interface TemplateCreateRequest {
   language: string;
   body: string;
 }
+
+// Automation types
+export interface AutomationStatus {
+  browser: {
+    mode: string;
+    opencli_ready: boolean;
+    playwright_available: boolean;
+  };
+  poller: {
+    running: boolean;
+    log: string[];
+  };
+  conversations: {
+    total: number;
+    active: number;
+    items: ActiveConversation[];
+  };
+}
+
+export interface ActiveConversation {
+  lead_id: string;
+  lead_name: string;
+  lead_company: string;
+  stage: string;
+  intent_score: number;
+  turn_count: number;
+  whatsapp_sent: boolean;
+}
+
+export interface TaskResult {
+  success: boolean;
+  message: string;
+  data?: Record<string, unknown>;
+}

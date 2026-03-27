@@ -2,6 +2,7 @@ import axios from "axios";
 import type {
   AnalyticsOverview,
   AuthResponse,
+  AutomationStatus,
   Campaign,
   CampaignCreateRequest,
   DataSource,
@@ -11,6 +12,7 @@ import type {
   Message,
   MessageStats,
   RegisterRequest,
+  TaskResult,
   Template,
   TemplateCreateRequest,
   User,
@@ -209,6 +211,65 @@ export const templatesApi = {
 export const analyticsApi = {
   overview: async (): Promise<AnalyticsOverview> => {
     const res = await api.get("/analytics/overview");
+    return res.data;
+  },
+};
+
+// Automation (直接调用 MCP Server HTTP API，通过 Next.js rewrite 代理)
+const automationClient = axios.create({
+  baseURL: "/automation",
+  headers: { "Content-Type": "application/json" },
+});
+
+export const automationApi = {
+  status: async (): Promise<AutomationStatus> => {
+    const res = await automationClient.get("/status");
+    return res.data;
+  },
+  search: async (data: {
+    query: string;
+    search_type?: string;
+    max_results?: number;
+    auto_import?: boolean;
+  }): Promise<TaskResult> => {
+    const res = await automationClient.post("/search", data);
+    return res.data;
+  },
+  pipeline: async (data: {
+    keyword: string;
+    our_company?: string;
+    our_products?: string;
+    max_dm?: number;
+    auto_dm?: boolean;
+  }): Promise<TaskResult> => {
+    const res = await automationClient.post("/pipeline", data);
+    return res.data;
+  },
+  startConversation: async (data: {
+    lead_id: number;
+    profile_url: string;
+    our_company?: string;
+    our_products?: string;
+  }): Promise<TaskResult> => {
+    const res = await automationClient.post("/conversation/start", data);
+    return res.data;
+  },
+  followUpAll: async (): Promise<TaskResult> => {
+    const res = await automationClient.post("/follow-up");
+    return res.data;
+  },
+  startPoller: async (interval_minutes?: number): Promise<TaskResult> => {
+    const res = await automationClient.post("/poller/start", {
+      interval_minutes: interval_minutes || 5,
+    });
+    return res.data;
+  },
+  stopPoller: async (): Promise<TaskResult> => {
+    const res = await automationClient.post("/poller/stop");
+    return res.data;
+  },
+  pollerLog: async (): Promise<{ running: boolean; log: string[] }> => {
+    const res = await automationClient.get("/poller/log");
     return res.data;
   },
 };
