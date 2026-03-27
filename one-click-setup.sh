@@ -112,10 +112,12 @@ if [ -f "$ENV_FILE" ]; then
     EXISTING_KIMI=$(grep "^KIMI_API_KEY=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
     EXISTING_OPENAI=$(grep "^OPENAI_API_KEY=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
     EXISTING_ANTHROPIC=$(grep "^ANTHROPIC_API_KEY=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+    EXISTING_OPENROUTER=$(grep "^OPENROUTER_API_KEY=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
     HAS_KEY=false
     [ -n "$EXISTING_KIMI" ] && [ "$EXISTING_KIMI" != "sk-xxx" ] && HAS_KEY=true
     [ -n "$EXISTING_OPENAI" ] && HAS_KEY=true
     [ -n "$EXISTING_ANTHROPIC" ] && HAS_KEY=true
+    [ -n "$EXISTING_OPENROUTER" ] && HAS_KEY=true
     if [ "$HAS_KEY" = true ]; then
         echo "  检测到已有配置（API Key 已填写）。"
         read -p "  要重新配置吗？(y/N) " RECONFIG
@@ -135,15 +137,17 @@ if [ "$SKIP_CONFIG" != "true" ]; then
     echo -e "  ${BOLD}[1] Kimi K2.5（月之暗面）${NC}— 国内用户推荐，性价比最高，注册送免费额度"
     echo -e "  ${BOLD}[2] OpenAI GPT-5.4${NC}    — 海外用户推荐，综合能力最强"
     echo -e "  ${BOLD}[3] Anthropic Claude${NC}   — 海外备选，推理能力强"
+    echo -e "  ${BOLD}[4] OpenRouter${NC}         — 多模型聚合平台，一个 Key 用所有模型（推荐海外用户）"
     echo ""
 
     while true; do
-        read -p "  请输入数字 1、2 或 3: " AI_CHOICE
+        read -p "  请输入数字 1、2、3 或 4: " AI_CHOICE
         case "$AI_CHOICE" in
             1) AI_PROVIDER="kimi"; break;;
             2) AI_PROVIDER="openai"; break;;
             3) AI_PROVIDER="anthropic"; break;;
-            *) echo "  请输入 1、2 或 3";;
+            4) AI_PROVIDER="openrouter"; break;;
+            *) echo "  请输入 1、2、3 或 4";;
         esac
     done
 
@@ -151,97 +155,62 @@ if [ "$SKIP_CONFIG" != "true" ]; then
     KIMI_KEY=""
     OPENAI_KEY=""
     ANTHROPIC_KEY=""
+    OPENROUTER_KEY=""
+    OPENROUTER_MODEL="openai/gpt-5.4"
 
-    # --- 根据选择引导获取 Key ---
+    # --- 根据选择填写 Key ---
     if [ "$AI_PROVIDER" = "kimi" ]; then
-        echo -e "  ${BOLD}获取 Kimi API Key：${NC}"
-        echo ""
-        echo "  1. 打开这个网址："
-        echo -e "     ${CYAN}https://platform.moonshot.cn/${NC}"
-        echo "  2. 用手机号注册/登录"
-        echo "  3. 左侧菜单「API Key 管理」→「新建」→「复制」"
-        echo ""
-        echo "  Key 长这样：sk-xxxxxxxxxxxxxxxxxxxxxxxx"
-        echo ""
-
         while true; do
-            read -p "  粘贴你的 Kimi API Key，按回车: " KIMI_KEY
+            read -p "  粘贴你的 Kimi API Key: " KIMI_KEY
             KIMI_KEY=$(echo "$KIMI_KEY" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            if [ -z "$KIMI_KEY" ]; then
-                fail "不能为空"
-            elif [[ "$KIMI_KEY" == sk-* ]]; then
-                ok "Key 格式正确"; break
-            else
-                warn "Key 通常以 sk- 开头"
-                read -p "  确定要用这个？(y/N) " CONFIRM
-                [[ "$CONFIRM" =~ ^[Yy]$ ]] && break
-            fi
+            [ -n "$KIMI_KEY" ] && break
+            fail "不能为空"
         done
+        ok "已保存"
 
     elif [ "$AI_PROVIDER" = "openai" ]; then
-        echo -e "  ${BOLD}获取 OpenAI API Key：${NC}"
-        echo ""
-        echo "  1. 打开这个网址："
-        echo -e "     ${CYAN}https://platform.openai.com/api-keys${NC}"
-        echo "  2. 登录你的 OpenAI 账号（没有就注册一个）"
-        echo "  3. 点「Create new secret key」→ 复制"
-        echo ""
-        echo "  Key 长这样：sk-proj-xxxxxxxxxxxxxxxx"
-        echo ""
-
         while true; do
-            read -p "  粘贴你的 OpenAI API Key，按回车: " OPENAI_KEY
+            read -p "  粘贴你的 OpenAI API Key: " OPENAI_KEY
             OPENAI_KEY=$(echo "$OPENAI_KEY" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            if [ -z "$OPENAI_KEY" ]; then
-                fail "不能为空"
-            elif [[ "$OPENAI_KEY" == sk-* ]]; then
-                ok "Key 格式正确"; break
-            else
-                warn "Key 通常以 sk- 开头"
-                read -p "  确定要用这个？(y/N) " CONFIRM
-                [[ "$CONFIRM" =~ ^[Yy]$ ]] && break
-            fi
+            [ -n "$OPENAI_KEY" ] && break
+            fail "不能为空"
         done
+        ok "已保存"
+
+    elif [ "$AI_PROVIDER" = "anthropic" ]; then
+        while true; do
+            read -p "  粘贴你的 Anthropic API Key: " ANTHROPIC_KEY
+            ANTHROPIC_KEY=$(echo "$ANTHROPIC_KEY" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [ -n "$ANTHROPIC_KEY" ] && break
+            fail "不能为空"
+        done
+        ok "已保存"
+
+    elif [ "$AI_PROVIDER" = "openrouter" ]; then
+        while true; do
+            read -p "  粘贴你的 OpenRouter API Key: " OPENROUTER_KEY
+            OPENROUTER_KEY=$(echo "$OPENROUTER_KEY" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [ -n "$OPENROUTER_KEY" ] && break
+            fail "不能为空"
+        done
+        ok "已保存"
 
         # 选择模型
         echo ""
-        echo "  选择模型："
-        echo -e "  ${BOLD}[1] gpt-5.4${NC}      — 最强旗舰（默认）"
-        echo -e "  ${BOLD}[2] gpt-5.4-mini${NC} — 更快更便宜，推荐"
-        echo -e "  ${BOLD}[3] gpt-5.4-nano${NC} — 最便宜，适合大量调用"
+        echo "  选择默认模型："
+        echo -e "  ${BOLD}[1] openai/gpt-5.4${NC}       — GPT-5.4 旗舰（默认）"
+        echo -e "  ${BOLD}[2] openai/gpt-5.4-mini${NC}  — GPT-5.4 轻量版，快速便宜"
+        echo -e "  ${BOLD}[3] openai/gpt-5.4-nano${NC}  — GPT-5.4 最小版，超低价"
+        echo -e "  ${BOLD}[4] openai/gpt-5.3-codex${NC} — 编程专用"
         echo ""
-        read -p "  输入 1/2/3（直接回车选 2）: " MODEL_CHOICE
-        case "$MODEL_CHOICE" in
-            1) OPENAI_MODEL="gpt-5.4";;
-            3) OPENAI_MODEL="gpt-5.4-nano";;
-            *) OPENAI_MODEL="gpt-5.4-mini";;
+        read -p "  输入 1/2/3/4（直接回车选 1）: " OR_MODEL_CHOICE
+        case "$OR_MODEL_CHOICE" in
+            2) OPENROUTER_MODEL="openai/gpt-5.4-mini";;
+            3) OPENROUTER_MODEL="openai/gpt-5.4-nano";;
+            4) OPENROUTER_MODEL="openai/gpt-5.3-codex";;
+            *) OPENROUTER_MODEL="openai/gpt-5.4";;
         esac
-        ok "使用模型: $OPENAI_MODEL"
-
-    elif [ "$AI_PROVIDER" = "anthropic" ]; then
-        echo -e "  ${BOLD}获取 Anthropic API Key：${NC}"
-        echo ""
-        echo "  1. 打开这个网址："
-        echo -e "     ${CYAN}https://console.anthropic.com/settings/keys${NC}"
-        echo "  2. 登录你的 Anthropic 账号"
-        echo "  3. 点「Create Key」→ 复制"
-        echo ""
-        echo "  Key 长这样：sk-ant-xxxxxxxxxxxxxxxx"
-        echo ""
-
-        while true; do
-            read -p "  粘贴你的 Anthropic API Key，按回车: " ANTHROPIC_KEY
-            ANTHROPIC_KEY=$(echo "$ANTHROPIC_KEY" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            if [ -z "$ANTHROPIC_KEY" ]; then
-                fail "不能为空"
-            elif [[ "$ANTHROPIC_KEY" == sk-ant-* ]]; then
-                ok "Key 格式正确"; break
-            else
-                warn "Key 通常以 sk-ant- 开头"
-                read -p "  确定要用这个？(y/N) " CONFIRM
-                [[ "$CONFIRM" =~ ^[Yy]$ ]] && break
-            fi
-        done
+        ok "使用模型: $OPENROUTER_MODEL"
     fi
 
     # 生成 SECRET_KEY（用户不需要知道这个）
@@ -270,6 +239,11 @@ KIMI_MODEL=kimi-k2.5
 OPENAI_API_KEY=${OPENAI_KEY}
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.4-mini}
+
+# OpenRouter (多模型聚合)
+OPENROUTER_API_KEY=${OPENROUTER_KEY}
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=${OPENROUTER_MODEL}
 
 # Anthropic Claude
 ANTHROPIC_API_KEY=${ANTHROPIC_KEY}

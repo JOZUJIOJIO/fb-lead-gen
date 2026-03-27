@@ -25,38 +25,87 @@ if [ -f "$ENV_FILE" ]; then
     echo ""
 fi
 
-# --- 1. Kimi API Key ---
+# --- 1. 选择 AI 供应商 ---
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "第 1 步：填写 AI 密钥（必填）"
+echo "第 1 步：选择 AI 供应商（必填）"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "系统需要一个 AI 来帮你分析客户。"
-echo "我们用的是 Kimi（月之暗面），注册就有免费额度。"
+echo "系统需要一个 AI 来帮你分析客户。请选择："
 echo ""
-echo "获取方法："
-echo "  1. 打开 https://platform.moonshot.cn/"
-echo "  2. 注册/登录"
-echo "  3. 进入 API Keys 页面"
-echo "  4. 创建一个 Key，复制过来"
-echo ""
-echo "Key 长这样：sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+echo "  [1] Kimi K2.5（月之暗面）— 国内推荐，注册送免费额度"
+echo "  [2] OpenAI GPT-5.4      — 海外推荐，综合最强"
+echo "  [3] OpenRouter           — 多模型聚合，一个Key用所有模型"
+echo "  [4] Anthropic Claude     — 海外备选"
 echo ""
 
+KIMI_KEY=""
+OPENAI_KEY=""
+OPENROUTER_KEY=""
+ANTHROPIC_KEY=""
+AI_PROVIDER="kimi"
+OPENAI_MODEL="gpt-5.4"
+OPENROUTER_MODEL="openai/gpt-5.4"
+
 while true; do
-    read -p "请粘贴你的 Kimi API Key: " KIMI_KEY
-    if [ -z "$KIMI_KEY" ]; then
-        echo "  API Key 不能为空，请重新输入。"
-    elif [[ "$KIMI_KEY" == sk-* ]]; then
-        echo "  ✅ 格式正确"
-        break
-    else
-        echo "  ⚠️  Key 通常以 sk- 开头，你确定吗？"
-        read -p "  继续使用这个 Key？(y/n) " CONFIRM
-        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-            break
-        fi
-    fi
+    read -p "请输入数字 1、2、3 或 4: " AI_CHOICE
+    case "$AI_CHOICE" in
+        1) AI_PROVIDER="kimi"; break;;
+        2) AI_PROVIDER="openai"; break;;
+        3) AI_PROVIDER="openrouter"; break;;
+        4) AI_PROVIDER="anthropic"; break;;
+        *) echo "  请输入 1、2、3 或 4";;
+    esac
 done
+
+echo ""
+
+if [ "$AI_PROVIDER" = "kimi" ]; then
+    while true; do
+        read -p "请粘贴你的 Kimi API Key: " KIMI_KEY
+        [ -n "$KIMI_KEY" ] && break
+        echo "  不能为空"
+    done
+    echo "  ✅ 已保存"
+
+elif [ "$AI_PROVIDER" = "openai" ]; then
+    while true; do
+        read -p "请粘贴你的 OpenAI API Key: " OPENAI_KEY
+        [ -n "$OPENAI_KEY" ] && break
+        echo "  不能为空"
+    done
+    echo "  ✅ 已保存"
+
+elif [ "$AI_PROVIDER" = "openrouter" ]; then
+    while true; do
+        read -p "请粘贴你的 OpenRouter API Key: " OPENROUTER_KEY
+        [ -n "$OPENROUTER_KEY" ] && break
+        echo "  不能为空"
+    done
+    echo "  ✅ 已保存"
+    echo ""
+    echo "  选择默认模型："
+    echo "  [1] openai/gpt-5.4       — GPT-5.4 旗舰（默认）"
+    echo "  [2] openai/gpt-5.4-mini  — GPT-5.4 轻量版，快速便宜"
+    echo "  [3] openai/gpt-5.4-nano  — GPT-5.4 最小版，超低价"
+    echo "  [4] openai/gpt-5.3-codex — 编程专用"
+    echo ""
+    read -p "  输入 1/2/3/4（直接回车选 1）: " OR_MODEL
+    case "$OR_MODEL" in
+        2) OPENROUTER_MODEL="openai/gpt-5.4-mini";;
+        3) OPENROUTER_MODEL="openai/gpt-5.4-nano";;
+        4) OPENROUTER_MODEL="openai/gpt-5.3-codex";;
+        *) OPENROUTER_MODEL="openai/gpt-5.4";;
+    esac
+    echo "  ✅ 使用模型: $OPENROUTER_MODEL"
+
+elif [ "$AI_PROVIDER" = "anthropic" ]; then
+    while true; do
+        read -p "请粘贴你的 Anthropic API Key: " ANTHROPIC_KEY
+        [ -n "$ANTHROPIC_KEY" ] && break
+        echo "  不能为空"
+    done
+    echo "  ✅ 已保存"
+fi
 
 # --- 2. WhatsApp（可选）---
 echo ""
@@ -99,13 +148,25 @@ REDIS_URL=redis://localhost:6379/0
 SECRET_KEY=${SECRET}
 
 # AI Provider
-AI_PROVIDER=kimi
+AI_PROVIDER=${AI_PROVIDER}
+
+# Kimi K2.5 (月之暗面)
 KIMI_API_KEY=${KIMI_KEY}
 KIMI_BASE_URL=https://api.moonshot.cn/v1
 KIMI_MODEL=kimi-k2.5
 
-# Anthropic Claude (optional)
-ANTHROPIC_API_KEY=
+# OpenAI GPT-5.4
+OPENAI_API_KEY=${OPENAI_KEY}
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=${OPENAI_MODEL}
+
+# OpenRouter (多模型聚合)
+OPENROUTER_API_KEY=${OPENROUTER_KEY}
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=${OPENROUTER_MODEL}
+
+# Anthropic Claude
+ANTHROPIC_API_KEY=${ANTHROPIC_KEY}
 
 # WhatsApp
 WHATSAPP_BUSINESS_TOKEN=${WA_TOKEN}

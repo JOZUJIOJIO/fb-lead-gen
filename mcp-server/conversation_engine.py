@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 KIMI_API_KEY = os.environ.get("KIMI_API_KEY", "")
 KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
 KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-k2.5")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-5.4")
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "kimi")
 WHATSAPP_NUMBER = os.environ.get("WHATSAPP_CONTACT_NUMBER", "+8613800138000")
 
 # 加载人设配置
@@ -176,6 +180,44 @@ def _call_kimi(prompt: str, max_tokens: int = 800) -> str:
         return resp.json()["choices"][0]["message"]["content"].strip()
 
 
+def _call_openrouter(prompt: str, max_tokens: int = 800) -> str:
+    """调用 OpenRouter API（OpenAI 兼容格式，默认 GPT 模型）。"""
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY not configured")
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(
+            f"{OPENROUTER_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": OPENROUTER_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.7,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+def _call_mcp_ai(prompt: str, max_tokens: int = 800) -> str:
+    """Route to configured AI provider for MCP server."""
+    provider = AI_PROVIDER.lower()
+    if provider == "openrouter" and OPENROUTER_API_KEY:
+        return _call_openrouter(prompt, max_tokens)
+    elif provider == "kimi" and KIMI_API_KEY:
+        return _call_kimi(prompt, max_tokens)
+    # fallback
+    elif KIMI_API_KEY:
+        return _call_kimi(prompt, max_tokens)
+    elif OPENROUTER_API_KEY:
+        return _call_openrouter(prompt, max_tokens)
+    else:
+        raise ValueError("No AI API key configured for MCP server.")
+
+
 def generate_opening_message(state: ConversationState) -> str:
     """生成第一条打招呼消息，基于 persona.json 配置。"""
     persona = load_persona()
@@ -209,7 +251,7 @@ def generate_opening_message(state: ConversationState) -> str:
 
 只输出消息内容，不要任何解释。"""
 
-    return _call_kimi(prompt, max_tokens=300)
+    return _call_mcp_ai(prompt, max_tokens=300)
 
 
 def generate_reply(state: ConversationState, their_message: str) -> dict:
@@ -304,7 +346,7 @@ def generate_reply(state: ConversationState, their_message: str) -> dict:
 只返回JSON，不要其他内容。"""
 
     try:
-        text = _call_kimi(prompt, max_tokens=600)
+        text = _call_mcp_ai(prompt, max_tokens=600)
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0]
         result = json.loads(text)

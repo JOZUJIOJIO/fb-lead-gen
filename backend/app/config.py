@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     secret_key: str = "dev-secret-key-change-in-production"
 
-    # AI Provider: "kimi", "openai", or "anthropic"
+    # AI Provider: "kimi", "openai", "anthropic", or "openrouter"
     ai_provider: str = "kimi"
 
     # Kimi K2.5 (Moonshot AI) - OpenAI compatible API
@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-5.4-mini"
+
+    # OpenRouter (supports many models via unified API)
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "openai/gpt-5.4"
 
     # Anthropic Claude
     anthropic_api_key: str = ""
