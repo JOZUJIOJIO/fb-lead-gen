@@ -215,9 +215,9 @@ export const analyticsApi = {
   },
 };
 
-// Automation (直接调用 MCP Server HTTP API，通过 Next.js rewrite 代理)
+// Automation (直接调用主机上的 Automation API，绕过 Docker 代理)
 const automationClient = axios.create({
-  baseURL: "/automation",
+  baseURL: typeof window !== "undefined" ? `http://${window.location.hostname}:3001` : "http://localhost:3001",
   headers: { "Content-Type": "application/json" },
 });
 
