@@ -13,7 +13,7 @@ Facebook-to-WhatsApp AI Lead Generation Platform for B2B Sales.
 | 后端 | FastAPI + SQLAlchemy + Celery |
 | 前端 | Next.js 14 + TypeScript + Tailwind CSS |
 | 数据库 | PostgreSQL 16 + Redis 7 |
-| AI | Kimi (Moonshot) / Anthropic Claude |
+| AI | Kimi / OpenAI / OpenRouter / Anthropic Claude |
 | 浏览器自动化 | **OpenCLI**（优先，复用 Chrome 登录态）/ Playwright（备选） |
 | 部署 | Docker Compose（一键启动） |
 
@@ -115,14 +115,17 @@ fb-lead-gen/
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `SECRET_KEY` | 是 | JWT 签名密钥（随机字符串） |
-| `AI_PROVIDER` | 是 | `kimi` 或 `anthropic` |
-| `KIMI_API_KEY` | 是* | Kimi API 密钥 |
-| `ANTHROPIC_API_KEY` | 否 | Claude API 密钥 |
+| `SECRET_KEY` | 是 | JWT 签名密钥（setup 脚本自动生成） |
+| `AI_PROVIDER` | 是 | `kimi` / `openai` / `openrouter` / `anthropic` |
+| `KIMI_API_KEY` | 否* | Kimi (月之暗面) API 密钥 |
+| `OPENAI_API_KEY` | 否* | OpenAI API 密钥 |
+| `OPENROUTER_API_KEY` | 否* | OpenRouter API 密钥 |
+| `ANTHROPIC_API_KEY` | 否* | Anthropic Claude API 密钥 |
 | `WHATSAPP_BUSINESS_TOKEN` | 否 | WhatsApp Business API Token |
 | `WHATSAPP_PHONE_NUMBER_ID` | 否 | WhatsApp 手机号 ID |
+| `ADMIN_PASSWORD` | 否 | 管理员密码（默认 `admin123456`） |
 
-> *至少需要配置一个 AI Provider 的 API Key。
+> *至少需要配置一个 AI Provider 的 API Key（与 `AI_PROVIDER` 对应的那个）。
 > DATABASE_URL 和 REDIS_URL 在 Docker 模式下会自动覆盖，无需修改。
 
 ## 服务端口

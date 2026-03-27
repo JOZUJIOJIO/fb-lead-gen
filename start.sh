@@ -169,7 +169,7 @@ echo "  启动 Automation API (浏览器自动化)..."
 lsof -ti :3001 | xargs kill -9 2>/dev/null
 cd "$PROJECT_DIR/mcp-server"
 if [ -f http_api.py ]; then
-    python http_api.py &>/tmp/leadflow-automation.log &
+    python3 http_api.py &>/tmp/leadflow-automation.log &
     AUTOMATION_PID=$!
     sleep 2
     if curl -s http://localhost:3001/status &>/dev/null 2>&1; then

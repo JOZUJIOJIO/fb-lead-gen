@@ -24,6 +24,8 @@ import subprocess
 import uuid
 from typing import Any
 
+from pathlib import Path
+
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -31,9 +33,28 @@ logger = logging.getLogger(__name__)
 DAEMON_URL = "http://127.0.0.1:19825"
 DAEMON_HEADERS = {"X-OpenCLI": "1", "Content-Type": "application/json"}
 
+# 自动加载 backend/.env（MCP server 运行在主机上）
+_env_file = Path(__file__).parent.parent / "backend" / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            _k = _k.strip()
+            _v = _v.strip()
+            if _k and not os.environ.get(_k):
+                os.environ[_k] = _v
+
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "kimi")
 KIMI_API_KEY = os.environ.get("KIMI_API_KEY", "")
 KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
 KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-k2.5")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o")
 
 
 # ============================================================
@@ -107,11 +128,31 @@ async def _ensure_daemon() -> bool:
 # AI 辅助（复用 browser_agent 的逻辑）
 # ============================================================
 
+def _get_ai_config() -> tuple[str, str, str] | None:
+    """返回可用的 AI 配置 (api_key, base_url, model)，按 AI_PROVIDER 优先。"""
+    provider = AI_PROVIDER.lower()
+    configs = {
+        "kimi": (KIMI_API_KEY, KIMI_BASE_URL, KIMI_MODEL),
+        "openai": (OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL),
+        "openrouter": (OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODEL),
+    }
+    # 优先使用指定 provider
+    if provider in configs and configs[provider][0]:
+        return configs[provider]
+    # 回退：找任意可用的
+    for cfg in configs.values():
+        if cfg[0]:
+            return cfg
+    return None
+
+
 async def ai_analyze_profiles(profiles: list[dict], search_context: str) -> list[dict]:
     """用 AI 分析提取到的 profile 数据，判断是否为潜在买家。"""
-    if not KIMI_API_KEY or not profiles:
+    ai_cfg = _get_ai_config()
+    if not ai_cfg or not profiles:
         return profiles
 
+    api_key, base_url, model = ai_cfg
     profiles_text = json.dumps(profiles[:20], ensure_ascii=False, indent=2)
     prompt = f"""你是一个B2B外贸获客助手。我在Facebook上搜索了「{search_context}」，找到了以下用户资料。
 
@@ -132,13 +173,13 @@ async def ai_analyze_profiles(profiles: list[dict], search_context: str) -> list
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
-                f"{KIMI_BASE_URL}/chat/completions",
+                f"{base_url}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {KIMI_API_KEY}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": KIMI_MODEL,
+                    "model": model,
                     "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": 2000,
                     "temperature": 0.3,

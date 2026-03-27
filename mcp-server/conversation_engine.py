@@ -23,12 +23,28 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# 自动加载 backend/.env（MCP server 运行在主机上）
+_env_file = Path(__file__).parent.parent / "backend" / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            _k = _k.strip()
+            _v = _v.strip()
+            if _k and not os.environ.get(_k):
+                os.environ[_k] = _v
+
 KIMI_API_KEY = os.environ.get("KIMI_API_KEY", "")
 KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
 KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-k2.5")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-5.4")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "kimi")
 WHATSAPP_NUMBER = os.environ.get("WHATSAPP_CONTACT_NUMBER", "+8613800138000")
 
@@ -180,6 +196,28 @@ def _call_kimi(prompt: str, max_tokens: int = 800) -> str:
         return resp.json()["choices"][0]["message"]["content"].strip()
 
 
+def _call_openai(prompt: str, max_tokens: int = 800) -> str:
+    """调用 OpenAI API。"""
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY not configured")
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(
+            f"{OPENAI_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": OPENAI_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.7,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()
+
+
 def _call_openrouter(prompt: str, max_tokens: int = 800) -> str:
     """调用 OpenRouter API（OpenAI 兼容格式，默认 GPT 模型）。"""
     if not OPENROUTER_API_KEY:
@@ -202,20 +240,50 @@ def _call_openrouter(prompt: str, max_tokens: int = 800) -> str:
         return resp.json()["choices"][0]["message"]["content"].strip()
 
 
+def _call_anthropic(prompt: str, max_tokens: int = 800) -> str:
+    """调用 Anthropic Claude API。"""
+    if not ANTHROPIC_API_KEY:
+        raise ValueError("ANTHROPIC_API_KEY not configured")
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-6-20260320",
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["content"][0]["text"].strip()
+
+
 def _call_mcp_ai(prompt: str, max_tokens: int = 800) -> str:
     """Route to configured AI provider for MCP server."""
     provider = AI_PROVIDER.lower()
-    if provider == "openrouter" and OPENROUTER_API_KEY:
+    if provider == "kimi" and KIMI_API_KEY:
+        return _call_kimi(prompt, max_tokens)
+    elif provider == "openai" and OPENAI_API_KEY:
+        return _call_openai(prompt, max_tokens)
+    elif provider == "openrouter" and OPENROUTER_API_KEY:
         return _call_openrouter(prompt, max_tokens)
-    elif provider == "kimi" and KIMI_API_KEY:
-        return _call_kimi(prompt, max_tokens)
-    # fallback
-    elif KIMI_API_KEY:
-        return _call_kimi(prompt, max_tokens)
+    elif provider == "anthropic" and ANTHROPIC_API_KEY:
+        return _call_anthropic(prompt, max_tokens)
+    # fallback: try any available key
+    elif OPENAI_API_KEY:
+        return _call_openai(prompt, max_tokens)
     elif OPENROUTER_API_KEY:
         return _call_openrouter(prompt, max_tokens)
+    elif KIMI_API_KEY:
+        return _call_kimi(prompt, max_tokens)
+    elif ANTHROPIC_API_KEY:
+        return _call_anthropic(prompt, max_tokens)
     else:
-        raise ValueError("No AI API key configured for MCP server.")
+        raise ValueError("No AI API key configured. Set AI_PROVIDER and the corresponding API key in backend/.env.")
 
 
 def generate_opening_message(state: ConversationState) -> str:

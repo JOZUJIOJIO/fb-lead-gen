@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,12 +17,13 @@ Base.metadata.create_all(bind=engine)
 
 def seed_default_admin():
     """Create default admin account if it doesn't exist."""
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123456")
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.email == "admin@leadflow.com").first():
             admin = User(
                 email="admin@leadflow.com",
-                hashed_password=pwd_context.hash("admin123456"),
+                hashed_password=pwd_context.hash(admin_password),
                 company_name="LeadFlow Demo",
             )
             db.add(admin)

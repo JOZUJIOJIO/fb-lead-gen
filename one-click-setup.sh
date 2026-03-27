@@ -344,6 +344,25 @@ else
 fi
 
 # ============================================================
+# [5] 启动 Automation API（浏览器自动化接口）
+# ============================================================
+if command -v python3 &>/dev/null && [ -f "$PROJECT_DIR/mcp-server/http_api.py" ]; then
+    echo ""
+    echo "  启动 Automation API (浏览器自动化)..."
+    lsof -ti :3001 | xargs kill -9 2>/dev/null 2>&1
+    cd "$PROJECT_DIR/mcp-server"
+    python3 http_api.py &>/tmp/leadflow-automation.log &
+    sleep 2
+    if curl -s http://localhost:3001/status &>/dev/null 2>&1; then
+        ok "Automation API: http://localhost:3001"
+    else
+        warn "Automation API 启动中，稍等片刻"
+        info "查看日志: cat /tmp/leadflow-automation.log"
+    fi
+    cd "$PROJECT_DIR"
+fi
+
+# ============================================================
 # 完成！
 # ============================================================
 echo ""

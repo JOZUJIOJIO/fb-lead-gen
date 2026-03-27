@@ -22,6 +22,18 @@ import uvicorn
 # 确保能导入同目录的模块
 sys.path.insert(0, str(Path(__file__).parent))
 
+# 自动加载 backend/.env 中的环境变量（MCP server 运行在主机上，需要读取 AI 配置）
+_env_file = Path(__file__).parent.parent / "backend" / ".env"
+if _env_file.exists():
+    for line in _env_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            if key and not os.environ.get(key):
+                os.environ[key] = value
+
 import browser_agent_opencli
 import browser_agent as browser_agent_playwright
 from conversation_engine import (
@@ -106,7 +118,7 @@ app = FastAPI(title="LeadFlow Automation API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

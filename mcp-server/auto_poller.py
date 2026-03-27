@@ -22,8 +22,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from playwright.async_api import async_playwright
-
 # 添加当前目录到 path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -120,6 +118,7 @@ async def poll_once():
 
     logger.info(f"检查 {len(active)} 个活跃对话...")
 
+    from playwright.async_api import async_playwright
     pw = await async_playwright().start()
     context = await pw.chromium.launch_persistent_context(
         user_data_dir=str(CHROME_DATA),

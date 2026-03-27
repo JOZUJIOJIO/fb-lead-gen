@@ -48,6 +48,10 @@ def list_leads(
 
     total = query.count()
 
+    allowed_sort_fields = {"created_at", "updated_at", "name", "company", "score", "status", "email", "source"}
+    if sort_by not in allowed_sort_fields:
+        sort_by = "created_at"
+
     if sort_order == "desc":
         query = query.order_by(getattr(Lead, sort_by).desc())
     else:
