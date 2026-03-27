@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { Suspense, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -28,7 +28,15 @@ const statusTabs = [
   { key: "converted", label: "已转化" },
 ];
 
-export default function LeadsPage() {
+export default function LeadsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-400">加载中...</div></div>}>
+      <LeadsPage />
+    </Suspense>
+  );
+}
+
+function LeadsPage() {
   const { user, loading: authLoading } = useAuth();
   const { showToast } = useToast();
   const searchParams = useSearchParams();

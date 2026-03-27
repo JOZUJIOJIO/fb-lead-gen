@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { PlusIcon } from "@heroicons/react/24/outline";
@@ -12,7 +12,15 @@ import { campaignsApi, templatesApi } from "@/lib/api";
 import type { Campaign, Template, CampaignCreateRequest } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 
-export default function CampaignsPage() {
+export default function CampaignsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-400">加载中...</div></div>}>
+      <CampaignsPage />
+    </Suspense>
+  );
+}
+
+function CampaignsPage() {
   const { user, loading: authLoading } = useAuth();
   const { showToast } = useToast();
   const searchParams = useSearchParams();
