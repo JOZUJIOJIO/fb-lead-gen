@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +73,114 @@ LEADFLOW_EMAIL = os.environ.get("LEADFLOW_EMAIL", "admin@leadflow.com")
 LEADFLOW_PASSWORD = os.environ.get("LEADFLOW_PASSWORD", "admin123456")
 FB_EMAIL = os.environ.get("FB_EMAIL", "")
 FB_PASSWORD = os.environ.get("FB_PASSWORD", "")
+
+# --- DM 重试配置 ---
+DM_MAX_RETRIES = int(os.environ.get("DM_MAX_RETRIES", "3"))
+DM_RETRY_BASE_DELAY = float(os.environ.get("DM_RETRY_BASE_DELAY", "2.0"))  # 秒
+
+# --- WhatsApp 速率限制配置 ---
+WA_RATE_LIMIT_PER_MINUTE = int(os.environ.get("WA_RATE_LIMIT_PER_MINUTE", "20"))
+WA_RATE_LIMIT_PER_HOUR = int(os.environ.get("WA_RATE_LIMIT_PER_HOUR", "200"))
+
+
+# ============================================================
+# 工具函数：重试 & 限流
+# ============================================================
+
+
+async def _send_dm_with_retry(fb, profile_url: str, message: str) -> bool:
+    """发送 Facebook DM，失败时指数退避重试（最多 DM_MAX_RETRIES 次）。"""
+    for attempt in range(1, DM_MAX_RETRIES + 1):
+        try:
+            success = await fb.send_dm(profile_url, message)
+            if success:
+                return True
+            logger.warning(f"DM 发送返回 False (第{attempt}次): {profile_url}")
+        except Exception as e:
+            logger.warning(f"DM 发送异常 (第{attempt}次): {e}")
+
+        if attempt < DM_MAX_RETRIES:
+            delay = DM_RETRY_BASE_DELAY * (2 ** (attempt - 1))  # 2s, 4s, 8s...
+            logger.info(f"等待 {delay:.1f}s 后重试...")
+            await asyncio.sleep(delay)
+
+    logger.error(f"DM 发送最终失败 (已重试{DM_MAX_RETRIES}次): {profile_url}")
+    return False
+
+
+class WhatsAppRateLimiter:
+    """基于令牌桶的 WhatsApp 消息速率限制器。
+
+    在内存中跟踪发送时间戳，按分钟和小时两个维度限流。
+    适用于单进程部署；如需多进程，可替换为 Redis 实现。
+    """
+
+    def __init__(self, per_minute: int = 20, per_hour: int = 200):
+        self.per_minute = per_minute
+        self.per_hour = per_hour
+        self._timestamps: list[float] = []
+
+    def _cleanup(self, now: float):
+        """清理超过 1 小时的记录。"""
+        cutoff = now - 3600
+        self._timestamps = [ts for ts in self._timestamps if ts > cutoff]
+
+    def can_send(self) -> bool:
+        """检查是否可以发送。"""
+        now = time.time()
+        self._cleanup(now)
+
+        # 检查每小时限额
+        if len(self._timestamps) >= self.per_hour:
+            return False
+
+        # 检查每分钟限额
+        one_min_ago = now - 60
+        recent = sum(1 for ts in self._timestamps if ts > one_min_ago)
+        if recent >= self.per_minute:
+            return False
+
+        return True
+
+    def wait_time(self) -> float:
+        """返回需要等待的秒数（0 表示可以立即发送）。"""
+        now = time.time()
+        self._cleanup(now)
+
+        # 检查每小时
+        if len(self._timestamps) >= self.per_hour:
+            oldest_in_hour = self._timestamps[0]
+            return oldest_in_hour + 3600 - now + 0.1
+
+        # 检查每分钟
+        one_min_ago = now - 60
+        recent_ts = [ts for ts in self._timestamps if ts > one_min_ago]
+        if len(recent_ts) >= self.per_minute:
+            oldest_in_min = recent_ts[0]
+            return oldest_in_min + 60 - now + 0.1
+
+        return 0.0
+
+    def record_send(self):
+        """记录一次发送。"""
+        self._timestamps.append(time.time())
+
+    async def acquire(self):
+        """等待直到可以发送，然后记录。"""
+        while True:
+            wait = self.wait_time()
+            if wait <= 0:
+                self.record_send()
+                return
+            logger.info(f"WhatsApp 限流: 等待 {wait:.1f}s")
+            await asyncio.sleep(wait)
+
+
+# 全局限流器实例
+_wa_limiter = WhatsAppRateLimiter(
+    per_minute=WA_RATE_LIMIT_PER_MINUTE,
+    per_hour=WA_RATE_LIMIT_PER_HOUR,
+)
 
 # --- MCP Server ---
 mcp = FastMCP(
@@ -654,9 +763,9 @@ def start_conversation(
             if not await fb.is_logged_in():
                 return "❌ 未登录 Facebook。请先用 login_facebook 登录。"
 
-            success = await fb.send_dm(profile_url, opening)
+            success = await _send_dm_with_retry(fb, profile_url, opening)
             if not success:
-                return f"❌ 私信发送失败。可能对方关闭了消息功能。\n\n原本要发送的内容:\n{opening}"
+                return f"❌ 私信发送失败（已重试{DM_MAX_RETRIES}次）。可能对方关闭了消息功能。\n\n原本要发送的内容:\n{opening}"
 
             # 记录对话
             state.add_our_message(opening)
@@ -744,8 +853,8 @@ def check_replies(lead_id: int, profile_url: str) -> str:
             if result.get("should_push_whatsapp"):
                 state.whatsapp_sent = True
 
-            # 发送回复
-            sent = await fb.send_dm(profile_url, our_reply)
+            # 发送回复（带重试）
+            sent = await _send_dm_with_retry(fb, profile_url, our_reply)
             if sent:
                 state.add_our_message(our_reply)
 
@@ -834,45 +943,74 @@ def conversation_status(lead_id: int = 0) -> str:
 
 
 @mcp.tool()
-def auto_follow_up_all() -> str:
+def auto_follow_up_all(concurrency: int = 5) -> str:
     """自动跟进所有活跃对话。检查所有客户的回复并自动回复。
 
     这是一个批量操作，会：
-    1. 遍历所有活跃对话
+    1. 并发遍历所有活跃对话（默认5路并发）
     2. 检查每个客户是否有新回复
     3. 对有回复的客户自动用AI生成并发送回复
     4. 返回汇总结果
 
+    参数:
+    - concurrency: 并发数（默认5，建议不超过10避免Facebook风控）
+
     示例: "帮我跟进一下所有客户" / "检查所有对话"
     """
-    convos = list_active_conversations()
-    if not convos:
-        return "暂无活跃对话。"
+    async def _follow_up_all():
+        convos = list_active_conversations()
+        if not convos:
+            return "暂无活跃对话。"
 
-    results = []
-    for c in convos:
-        if c["turn_count"] >= MAX_TURNS:
-            continue
-        # 这里需要 profile_url，从 LeadFlow 获取
-        try:
-            lead = _api("GET", f"/leads/{c['lead_id']}")
-            profile_url = lead.get("source_url", "")
-            if not profile_url:
-                continue
+        # 过滤已达上限的对话
+        active = [c for c in convos if c["turn_count"] < MAX_TURNS]
+        if not active:
+            return f"所有 {len(convos)} 个对话已达到 {MAX_TURNS} 轮上限。"
 
-            # 调用 check_replies 逻辑
-            result = check_replies(int(c["lead_id"]), profile_url)
-            if "暂无新回复" not in result:
-                results.append(f"• {c['lead_name']}: 有新进展")
-            else:
-                results.append(f"• {c['lead_name']}: 等待回复中")
-        except Exception as e:
-            results.append(f"• {c['lead_name']}: 检查失败 ({str(e)[:30]})")
+        # 预获取所有 lead 的 profile_url
+        tasks_info = []
+        for c in active:
+            try:
+                lead = _api("GET", f"/leads/{c['lead_id']}")
+                profile_url = lead.get("source_url", "")
+                if profile_url:
+                    tasks_info.append((c, profile_url))
+            except Exception:
+                pass
 
-    return (
-        f"🔄 批量跟进完成 ({len(convos)} 个对话)\n\n"
-        + "\n".join(results)
-    )
+        if not tasks_info:
+            return "没有可跟进的对话（均缺少 profile_url）。"
+
+        results = []
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _process_one(conv_info, url):
+            async with semaphore:
+                try:
+                    result = check_replies(int(conv_info["lead_id"]), url)
+                    if "暂无新回复" not in result:
+                        return f"• {conv_info['lead_name']}: 有新进展"
+                    else:
+                        return f"• {conv_info['lead_name']}: 等待回复中"
+                except Exception as e:
+                    return f"• {conv_info['lead_name']}: 检查失败 ({str(e)[:30]})"
+
+        # 并发执行所有跟进任务
+        coros = [_process_one(c, url) for c, url in tasks_info]
+        results = await asyncio.gather(*coros)
+
+        new_progress = sum(1 for r in results if "新进展" in r)
+        waiting = sum(1 for r in results if "等待回复" in r)
+        failed = sum(1 for r in results if "检查失败" in r)
+
+        summary = (
+            f"🔄 批量跟进完成 ({len(tasks_info)}/{len(convos)} 个对话，{concurrency}路并发)\n"
+            f"   📈 新进展: {new_progress} | ⏳ 等待中: {waiting} | ❌ 失败: {failed}\n\n"
+            + "\n".join(results)
+        )
+        return summary
+
+    return asyncio.run(_follow_up_all())
 
 
 @mcp.tool()
@@ -1008,8 +1146,8 @@ def full_pipeline(
                         # AI 生成打招呼消息
                         opening = generate_opening_message(state)
 
-                        # 发送私信
-                        sent = await fb.send_dm(profile_url, opening)
+                        # 发送私信（带重试）
+                        sent = await _send_dm_with_retry(fb, profile_url, opening)
                         if sent:
                             state.add_our_message(opening)
                             dm_sent += 1
@@ -1083,7 +1221,19 @@ def handle_whatsapp_message(
     - our_products: 你的产品（可选）
 
     返回 AI 生成的回复内容，OpenClaw 会通过 WhatsApp 发回给客户。
+
+    内置速率限制（默认 20条/分钟、200条/小时），防止触发 WhatsApp API 封号。
     """
+    # WhatsApp 限流检查
+    if not _wa_limiter.can_send():
+        wait = _wa_limiter.wait_time()
+        return (
+            f"⚠️ WhatsApp 发送已达速率限制（{WA_RATE_LIMIT_PER_MINUTE}条/分钟，{WA_RATE_LIMIT_PER_HOUR}条/小时）。\n"
+            f"请等待 {wait:.0f} 秒后重试。\n\n"
+            f"来自 {customer_name} ({phone}) 的消息已收到但暂未回复:\n{message[:100]}"
+        )
+    _wa_limiter.record_send()
+
     # 用 phone 作为 lead_id
     lead_id = f"wa_{phone.replace('+', '').replace(' ', '')}"
 
@@ -1204,6 +1354,30 @@ def whatsapp_conversation_list() -> str:
             f"     最新: {c.get('last_message', '')[:40]}..."
         )
     return "\n".join(lines)
+
+
+@mcp.tool()
+def whatsapp_rate_status() -> str:
+    """查看 WhatsApp 发送速率限制状态。
+
+    显示当前限额使用情况和剩余配额。
+    """
+    now = time.time()
+    _wa_limiter._cleanup(now)
+
+    one_min_ago = now - 60
+    recent_min = sum(1 for ts in _wa_limiter._timestamps if ts > one_min_ago)
+    total_hour = len(_wa_limiter._timestamps)
+
+    return (
+        f"📊 WhatsApp 速率限制状态\n"
+        f"{'='*35}\n"
+        f"每分钟: {recent_min}/{_wa_limiter.per_minute} 条\n"
+        f"每小时: {total_hour}/{_wa_limiter.per_hour} 条\n"
+        f"可立即发送: {'✅ 是' if _wa_limiter.can_send() else '❌ 否'}\n"
+        + (f"需等待: {_wa_limiter.wait_time():.0f} 秒\n" if not _wa_limiter.can_send() else "")
+        + f"\n配置: WA_RATE_LIMIT_PER_MINUTE={WA_RATE_LIMIT_PER_MINUTE}, WA_RATE_LIMIT_PER_HOUR={WA_RATE_LIMIT_PER_HOUR}"
+    )
 
 
 # ============================================================
