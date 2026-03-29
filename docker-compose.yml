@@ -1,85 +1,66 @@
 services:
-  # --- 数据库 ---
   postgres:
     image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: leadflow
-      POSTGRES_USER: leadflow
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leadflow_dev_password}
-    ports:
-      - "5432:5432"
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: leadflow
+      POSTGRES_PASSWORD: leadflow123
+      POSTGRES_DB: leadflow
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U leadflow"]
+      test: ["CMD-SHELL", "pg_isready -U leadflow -d leadflow"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 5
 
-  # --- 后端 API ---
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    build: ./backend
     ports:
       - "8000:8000"
-    env_file:
-      - ./backend/.env
-    environment:
-      # Docker 内部地址（覆盖 .env 中的 localhost）
-      DATABASE_URL: postgresql://leadflow:${POSTGRES_PASSWORD:-leadflow_dev_password}@postgres:5432/leadflow
-      REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
-
-  # --- Celery Worker（异步任务）---
-  celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     env_file:
-      - ./backend/.env
+      - backend/.env
     environment:
-      DATABASE_URL: postgresql://leadflow:${POSTGRES_PASSWORD:-leadflow_dev_password}@postgres:5432/leadflow
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: celery -A app.tasks.celery_app worker --loglevel=info
+      DISPLAY: ":99"
+    volumes:
+      - ./backend/app:/app/app
+      - browser_data:/tmp/leadflow-browser
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
-  # --- 前端 ---
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    build: ./frontend
     ports:
       - "3000:3000"
-    environment:
-      BACKEND_URL: http://backend:8000
-      AUTOMATION_URL: http://host.docker.internal:3001
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
     restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
+  browser_data:

@@ -1,142 +1,139 @@
-# LeadFlow AI — 智能外贸获客平台
+# LeadFlow AI -- 智能社媒获客工具
 
-Facebook-to-WhatsApp AI Lead Generation Platform for B2B Sales.
+AI 驱动的社交媒体线索搜索 + 千人千面个性化私信工具。
 
-通过 Facebook 自动化搜索潜在客户，AI 分析画像并进行多轮对话，最终推送到 WhatsApp 完成获客转化。
+## 两步启动
 
-> **第一次安装？** 请看 **[完整安装指南 (SETUP-GUIDE.md)](SETUP-GUIDE.md)** — 保姆级教程，非技术人员也能看懂。
+```bash
+git clone <repo-url> && cd fb-lead-gen
+bash setup.sh
+```
+
+引导脚本会交互式地帮你：
+1. 检查 Docker 环境
+2. 选择 AI 供应商（OpenAI / Claude / Kimi）
+3. 填写 API Key
+4. 可选配置代理和密码
+5. 自动生成配置并启动所有服务
+
+完成后打开 http://localhost:3000 即可使用。
+
+> 也可以跳过脚本直接 `docker compose up -d`，首次打开网页时会有引导页面。
+
+## 功能
+
+- **Facebook 智能搜索** -- 按关键词、地区、行业精准搜索目标主页（更多平台即将支持）
+- **AI 个性化消息** -- 分析目标主页内容，生成千人千面的问好消息
+- **Web 仪表盘** -- 可视化管理任务、线索和消息发送状态
+- **MCP 接入** -- 可选接入 OpenClaw，用自然语言操控获客流程
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | FastAPI + SQLAlchemy + Celery |
-| 前端 | Next.js 14 + TypeScript + Tailwind CSS |
-| 数据库 | PostgreSQL 16 + Redis 7 |
-| AI | Kimi / OpenAI / OpenRouter / Anthropic Claude |
-| 浏览器自动化 | **OpenCLI**（优先，复用 Chrome 登录态）/ Playwright（备选） |
-| 部署 | Docker Compose（一键启动） |
-
-## 快速开始（一键部署）
-
-### 前提条件
-
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)（唯一必需）
-- Node.js 18+（用于 OpenCLI 浏览器代理）
-- Python 3.10+（用于 MCP Server）
-
-### 安装（一条命令）
-
-```bash
-git clone --recurse-submodules https://github.com/JOZUJIOJIO/fb-lead-gen.git
-cd fb-lead-gen
-bash one-click-setup.sh
-```
-
-脚本会一步步引导你：检查环境 → 粘贴 AI 密钥 → 自动启动全部服务 → 安装浏览器控制工具。
-
-完成后打开 http://localhost:3000 就能用了。
-
-- 账号: `admin@leadflow.com`
-- 密码: `admin123456`
-
-### 日常使用
-
-```bash
-docker compose up -d      # 启动
-docker compose down        # 停止
-docker compose logs -f     # 查看日志
-```
-
-## 架构说明
-
-```
-Docker 容器（docker compose up -d）:
-├── frontend    (Next.js)     → localhost:3000
-├── backend     (FastAPI)     → localhost:8000
-├── celery      (异步任务)
-├── postgres    (数据库)      → localhost:5432
-└── redis       (缓存/队列)   → localhost:6379
-
-本机运行（操控真实浏览器）:
-└── OpenCLI Browser Agent
-    ├── Chrome 扩展 (Browser Bridge)
-    ├── 本地 daemon (localhost:19825)
-    └── 你已登录 Facebook 的 Chrome ← 关键！
-```
-
-浏览器代理**必须在本机运行**，因为它需要操控你真实的 Chrome 浏览器（已登录 Facebook）。如果放在 Docker 里，Facebook 会检测到是自动化环境。
-
-## 浏览器自动化方案
-
-系统自动选择最优方案：
-
-| | OpenCLI（推荐） | Playwright（备选） |
-|--|-----------------|-------------------|
-| 原理 | 控制你已打开的 Chrome | 启动独立的 Chromium |
-| Facebook 登录 | 复用已登录状态 | 需要重新登录 |
-| 被检测风险 | 低 | 高 |
-| 需要 | Chrome + 扩展 | Playwright + Chromium |
+| 后端 API | FastAPI + SQLAlchemy |
+| 前端 | Next.js + TypeScript + Tailwind CSS |
+| 浏览器自动化 | Patchright |
+| 数据库 | PostgreSQL 16 |
+| 缓存 | Redis 7 |
+| AI | OpenAI / Anthropic / Kimi |
+| 容器化 | Docker Compose |
 
 ## 项目结构
 
 ```
 fb-lead-gen/
-├── backend/                      # FastAPI 后端（Docker）
+├── backend/          # FastAPI 后端
 │   ├── app/
-│   │   ├── main.py               # 入口 + 自动建表 + 账号 seed
-│   │   ├── models.py             # SQLAlchemy 数据模型
-│   │   ├── routers/              # API 路由
-│   │   ├── services/             # 业务逻辑
-│   │   └── tasks/                # Celery 异步任务
-│   ├── .env.example              # 环境变量模板
 │   ├── Dockerfile
 │   └── requirements.txt
-├── frontend/                     # Next.js 前端（Docker）
+├── frontend/         # Next.js 前端仪表盘
 │   ├── src/
 │   ├── Dockerfile
 │   └── package.json
-├── mcp-server/                   # MCP 集成层（本机运行）
-│   ├── server.py                 # FastMCP 服务
-│   ├── browser_agent_opencli.py  # OpenCLI 浏览器自动化（优先）
-│   ├── browser_agent.py          # Playwright 浏览器自动化（备选）
-│   ├── conversation_engine.py    # 多轮对话引擎
-│   └── auto_poller.py            # 自动回复轮询
-├── opencli-vendor/               # OpenCLI 源码（git submodule）
-├── docker-compose.yml            # Docker 编排（一键启动）
-├── install-agent.sh              # 浏览器代理安装脚本
-├── setup.sh                      # 传统部署脚本（非 Docker）
-└── start.sh                      # 传统启动脚本（非 Docker）
+├── mcp-server/       # MCP Server (OpenClaw 集成)
+│   ├── server.py
+│   ├── Dockerfile
+│   └── requirements.txt
+├── docker-compose.yml
+├── .env.example      # 环境变量模板
+└── README.md
+```
+
+## 日常使用
+
+```bash
+docker compose up -d       # 启动全部服务
+docker compose down         # 停止全部服务
+docker compose logs -f      # 查看实时日志
+docker compose restart backend  # 重启单个服务
 ```
 
 ## 环境变量
 
-编辑 `backend/.env`：
+复制 `.env.example` 到 `backend/.env`，按需修改:
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `SECRET_KEY` | 是 | JWT 签名密钥（setup 脚本自动生成） |
-| `AI_PROVIDER` | 是 | `kimi` / `openai` / `openrouter` / `anthropic` |
-| `KIMI_API_KEY` | 否* | Kimi (月之暗面) API 密钥 |
-| `OPENAI_API_KEY` | 否* | OpenAI API 密钥 |
-| `OPENROUTER_API_KEY` | 否* | OpenRouter API 密钥 |
-| `ANTHROPIC_API_KEY` | 否* | Anthropic Claude API 密钥 |
-| `WHATSAPP_BUSINESS_TOKEN` | 否 | WhatsApp Business API Token |
-| `WHATSAPP_PHONE_NUMBER_ID` | 否 | WhatsApp 手机号 ID |
-| `ADMIN_PASSWORD` | 否 | 管理员密码（默认 `admin123456`） |
+| `AI_PROVIDER` | 是 | `openai` / `anthropic` / `kimi` |
+| `OPENAI_API_KEY` | 否* | OpenAI API Key（也支持兼容 API） |
+| `ANTHROPIC_API_KEY` | 否* | Anthropic Claude API Key |
+| `KIMI_API_KEY` | 否* | Moonshot Kimi API Key |
+| `SEND_INTERVAL_MIN` | 否 | 消息间隔最小秒数（默认 60） |
+| `SEND_INTERVAL_MAX` | 否 | 消息间隔最大秒数（默认 180） |
+| `MAX_DAILY_MESSAGES` | 否 | 每日发送上限（默认 50） |
+| `ADMIN_PASSWORD` | 否 | 管理后台密码（默认 admin123456） |
 
-> *至少需要配置一个 AI Provider 的 API Key（与 `AI_PROVIDER` 对应的那个）。
-> DATABASE_URL 和 REDIS_URL 在 Docker 模式下会自动覆盖，无需修改。
+> *至少需要配置一个 AI Provider 的 API Key，与 `AI_PROVIDER` 对应。
 
 ## 服务端口
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| 前端 | 3000 | Next.js |
-| 后端 | 8000 | FastAPI (含 Swagger: /docs) |
-| PostgreSQL | 5432 | 数据库 |
-| Redis | 6379 | 缓存 + 任务队列 |
-| OpenCLI daemon | 19825 | 浏览器控制（本机） |
+| 前端 | 3000 | Next.js 仪表盘 |
+| 后端 | 8000 | FastAPI (Swagger: /docs) |
+| PostgreSQL | 5432 | 数据库（Docker 内部） |
+| Redis | 6379 | 缓存 + 任务队列（Docker 内部） |
+
+## OpenClaw 集成（可选）
+
+LeadFlow 提供 MCP Server，可接入 OpenClaw 实现自然语言操控获客流程。
+
+### 注册方式
+
+在 OpenClaw 设置中添加 MCP Server:
+
+```json
+{
+  "mcpServers": {
+    "leadflow": {
+      "command": "python",
+      "args": ["mcp-server/server.py"],
+      "cwd": "/path/to/fb-lead-gen"
+    }
+  }
+}
+```
+
+或使用 Docker:
+
+```json
+{
+  "mcpServers": {
+    "leadflow": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "--network=host", "leadflow-mcp"]
+    }
+  }
+}
+```
+
+### 可用指令示例
+
+- "帮我在 Facebook 搜索深圳做外贸的商家，发 10 条问好消息"
+- "查看任务 #3 的进度"
+- "暂停所有正在运行的任务"
+- "列出所有已回复的线索"
 
 ## License
 

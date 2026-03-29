@@ -1,10 +1,9 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import ClientLayout from "./client-layout";
+import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "LeadFlow AI - 智能外贸获客平台",
-  description: "Facebook to WhatsApp AI lead generation platform for foreign trade companies",
+  title: 'LeadFlow AI - 智能获客助手',
+  description: '社交媒体智能线索获取平台',
 };
 
 export default function RootLayout({
@@ -14,8 +13,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
-      <body>
-        <ClientLayout>{children}</ClientLayout>
+      <body className="bg-[#f5f5f7]">
+        {children}
       </body>
     </html>
   );

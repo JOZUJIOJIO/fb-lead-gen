@@ -1,48 +1,42 @@
+"""Application configuration loaded from environment variables."""
+
+import secrets
+from typing import Optional
+
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://leadflow:leadflow_dev_password@localhost:5432/leadflow"
-    redis_url: str = "redis://localhost:6379/0"
-    secret_key: str = "dev-secret-key-change-in-production"
+    # Security
+    SECRET_KEY: str = secrets.token_urlsafe(32)
+    ADMIN_PASSWORD: str = "admin123456"
 
-    # AI Provider: "kimi", "openai", "anthropic", or "openrouter"
-    ai_provider: str = "kimi"
+    # Database
+    DATABASE_URL: str = "postgresql+asyncpg://leadflow:leadflow123@postgres:5432/leadflow"
 
-    # Kimi K2.5 (Moonshot AI) - OpenAI compatible API
-    kimi_api_key: str = ""
-    kimi_base_url: str = "https://api.moonshot.cn/v1"
-    kimi_model: str = "kimi-k2.5"
+    # Redis
+    REDIS_URL: str = "redis://redis:6379/0"
 
-    # OpenAI GPT-5.4
-    openai_api_key: str = ""
-    openai_base_url: str = "https://api.openai.com/v1"
-    openai_model: str = "gpt-5.4-mini"
+    # AI Provider: openai | anthropic | kimi
+    AI_PROVIDER: str = "openai"
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: Optional[str] = None
+    ANTHROPIC_API_KEY: Optional[str] = None
+    KIMI_API_KEY: Optional[str] = None
 
-    # OpenRouter (supports many models via unified API)
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "openai/gpt-5.4"
+    # Browser proxy
+    PROXY_SERVER: Optional[str] = None
 
-    # Anthropic Claude
-    anthropic_api_key: str = ""
+    # Message sending limits
+    SEND_INTERVAL_MIN: int = 60
+    SEND_INTERVAL_MAX: int = 180
+    MAX_DAILY_MESSAGES: int = 50
 
-    # WhatsApp
-    whatsapp_business_token: str = ""
-    whatsapp_phone_number_id: str = ""
-
-    # Telegram
-    telegram_bot_token: str = ""
-
-    # Facebook
-    facebook_app_id: str = ""
-    facebook_app_secret: str = ""
-    facebook_access_token: str = ""
-
-    access_token_expire_minutes: int = 1440  # 24 hours
-    algorithm: str = "HS256"
-
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": True,
+    }
 
 
 settings = Settings()

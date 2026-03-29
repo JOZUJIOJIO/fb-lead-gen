@@ -1,33 +1,16 @@
-import axios from "axios";
-import type {
-  AnalyticsOverview,
-  AuthResponse,
-  AutomationStatus,
-  Campaign,
-  CampaignCreateRequest,
-  DataSource,
-  ImportResult,
-  Lead,
-  LoginRequest,
-  Message,
-  MessageStats,
-  RegisterRequest,
-  TaskResult,
-  Template,
-  TemplateCreateRequest,
-  User,
-} from "./types";
+import axios from 'axios';
 
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
   headers: {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
 });
 
+// Request interceptor for auth token
 api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("access_token");
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('auth_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -35,243 +18,57 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      window.location.href = "/login";
+    if (error.response?.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token');
+      }
     }
     return Promise.reject(error);
   }
 );
 
-// Auth
+// Auth APIs
 export const authApi = {
-  login: async (data: LoginRequest): Promise<AuthResponse> => {
-    const res = await api.post("/auth/login", data);
-    return res.data;
-  },
-  register: async (data: RegisterRequest): Promise<User> => {
-    const res = await api.post("/auth/register", data);
-    return res.data;
-  },
-  me: async (): Promise<User> => {
-    const res = await api.get("/auth/me");
-    return res.data;
-  },
+  login: (email: string, password: string) =>
+    api.post('/api/auth/login', { email, password }),
+  me: () => api.get('/api/auth/me'),
 };
 
-// Leads
-export const leadsApi = {
-  list: async (params?: {
-    page?: number;
-    page_size?: number;
-    status?: string;
-    search?: string;
-    sort_by?: string;
-    sort_order?: string;
-  }): Promise<{ items: Lead[]; total: number; page: number; pages: number }> => {
-    const res = await api.get("/leads", { params });
-    return res.data;
-  },
-  get: async (id: number): Promise<Lead> => {
-    const res = await api.get(`/leads/${id}`);
-    return res.data;
-  },
-  create: async (data: Partial<Lead>): Promise<Lead> => {
-    const res = await api.post("/leads", data);
-    return res.data;
-  },
-  update: async (id: number, data: Partial<Lead>): Promise<Lead> => {
-    const res = await api.put(`/leads/${id}`, data);
-    return res.data;
-  },
-  delete: async (id: number): Promise<void> => {
-    await api.delete(`/leads/${id}`);
-  },
-  import: async (file: File): Promise<{ imported: number; errors: string[] }> => {
-    const formData = new FormData();
-    formData.append("file", file);
-    const res = await api.post("/leads/import", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    return res.data;
-  },
-  analyze: async (id: number): Promise<Lead> => {
-    const res = await api.post(`/leads/${id}/analyze`);
-    return res.data;
-  },
-  batchAnalyze: async (ids: number[]): Promise<{ analyzed: number }> => {
-    const res = await api.post("/leads/batch-analyze", { ids });
-    return res.data;
-  },
-  sources: async (): Promise<DataSource[]> => {
-    const res = await api.get("/leads/sources");
-    return res.data;
-  },
-  importFromSource: async (
-    source: string,
-    file: File,
-    showName?: string
-  ): Promise<ImportResult> => {
-    const formData = new FormData();
-    formData.append("file", file);
-    if (showName) formData.append("show_name", showName);
-    const res = await api.post(`/leads/import/${source}`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    return res.data;
-  },
+// Campaign APIs
+export const campaignApi = {
+  list: () => api.get('/api/campaigns'),
+  get: (id: string) => api.get(`/api/campaigns/${id}`),
+  create: (data: Record<string, unknown>) => api.post('/api/campaigns', data),
+  delete: (id: string) => api.delete(`/api/campaigns/${id}`),
+  start: (id: string) => api.post(`/api/campaigns/${id}/start`),
+  pause: (id: string) => api.post(`/api/campaigns/${id}/pause`),
+  stop: (id: string) => api.post(`/api/campaigns/${id}/stop`),
+  stats: () => api.get('/api/campaigns/stats/overview'),
 };
 
-// Campaigns
-export const campaignsApi = {
-  list: async (): Promise<Campaign[]> => {
-    const res = await api.get("/campaigns");
-    return res.data;
-  },
-  get: async (id: number): Promise<Campaign> => {
-    const res = await api.get(`/campaigns/${id}`);
-    return res.data;
-  },
-  create: async (data: CampaignCreateRequest): Promise<Campaign> => {
-    const res = await api.post("/campaigns", data);
-    return res.data;
-  },
-  update: async (id: number, data: Partial<CampaignCreateRequest>): Promise<Campaign> => {
-    const res = await api.put(`/campaigns/${id}`, data);
-    return res.data;
-  },
-  delete: async (id: number): Promise<void> => {
-    await api.delete(`/campaigns/${id}`);
-  },
-  launch: async (id: number): Promise<Campaign> => {
-    const res = await api.post(`/campaigns/${id}/launch`);
-    return res.data;
-  },
+// Lead APIs
+export const leadApi = {
+  list: (params?: Record<string, string>) => api.get('/api/leads', { params }),
+  get: (id: string) => api.get(`/api/leads/${id}`),
 };
 
-// Messages
-export const messagesApi = {
-  list: async (params?: {
-    status?: string;
-    campaign_id?: number;
-    lead_id?: number;
-  }): Promise<Message[]> => {
-    const res = await api.get("/messages", { params });
-    return res.data.items || res.data;
-  },
-  approve: async (id: number): Promise<Message> => {
-    const res = await api.post(`/messages/${id}/approve`);
-    return res.data;
-  },
-  send: async (id: number): Promise<Message> => {
-    const res = await api.post(`/messages/${id}/send`);
-    return res.data;
-  },
-  batchApprove: async (ids: number[]): Promise<{ approved: number }> => {
-    const res = await api.post("/messages/batch-approve", { ids });
-    return res.data;
-  },
-  batchSend: async (ids: number[]): Promise<{ sent: number }> => {
-    const res = await api.post("/messages/batch-send", { ids });
-    return res.data;
-  },
-  stats: async (): Promise<MessageStats> => {
-    const res = await api.get("/messages/stats");
-    return res.data;
-  },
+// Persona APIs
+export const personaApi = {
+  list: () => api.get('/api/personas'),
+  get: (id: string) => api.get(`/api/personas/${id}`),
+  create: (data: Record<string, unknown>) => api.post('/api/personas', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/api/personas/${id}`, data),
+  delete: (id: string) => api.delete(`/api/personas/${id}`),
 };
 
-// Templates
-export const templatesApi = {
-  list: async (): Promise<Template[]> => {
-    const res = await api.get("/templates");
-    return res.data;
-  },
-  get: async (id: number): Promise<Template> => {
-    const res = await api.get(`/templates/${id}`);
-    return res.data;
-  },
-  create: async (data: TemplateCreateRequest): Promise<Template> => {
-    const res = await api.post("/templates", data);
-    return res.data;
-  },
-  update: async (id: number, data: Partial<TemplateCreateRequest>): Promise<Template> => {
-    const res = await api.put(`/templates/${id}`, data);
-    return res.data;
-  },
-  delete: async (id: number): Promise<void> => {
-    await api.delete(`/templates/${id}`);
-  },
-};
-
-// Analytics
-export const analyticsApi = {
-  overview: async (): Promise<AnalyticsOverview> => {
-    const res = await api.get("/analytics/overview");
-    return res.data;
-  },
-};
-
-// Automation (直接调用主机上的 Automation API，绕过 Docker 代理)
-const automationClient = axios.create({
-  baseURL: typeof window !== "undefined" ? `http://${window.location.hostname}:3001` : "http://localhost:3001",
-  headers: { "Content-Type": "application/json" },
-});
-
-export const automationApi = {
-  status: async (): Promise<AutomationStatus> => {
-    const res = await automationClient.get("/status");
-    return res.data;
-  },
-  search: async (data: {
-    query: string;
-    search_type?: string;
-    max_results?: number;
-    auto_import?: boolean;
-  }): Promise<TaskResult> => {
-    const res = await automationClient.post("/search", data);
-    return res.data;
-  },
-  pipeline: async (data: {
-    keyword: string;
-    our_company?: string;
-    our_products?: string;
-    max_dm?: number;
-    auto_dm?: boolean;
-  }): Promise<TaskResult> => {
-    const res = await automationClient.post("/pipeline", data);
-    return res.data;
-  },
-  startConversation: async (data: {
-    lead_id: number;
-    profile_url: string;
-    our_company?: string;
-    our_products?: string;
-  }): Promise<TaskResult> => {
-    const res = await automationClient.post("/conversation/start", data);
-    return res.data;
-  },
-  followUpAll: async (): Promise<TaskResult> => {
-    const res = await automationClient.post("/follow-up");
-    return res.data;
-  },
-  startPoller: async (interval_minutes?: number): Promise<TaskResult> => {
-    const res = await automationClient.post("/poller/start", {
-      interval_minutes: interval_minutes || 5,
-    });
-    return res.data;
-  },
-  stopPoller: async (): Promise<TaskResult> => {
-    const res = await automationClient.post("/poller/stop");
-    return res.data;
-  },
-  pollerLog: async (): Promise<{ running: boolean; log: string[] }> => {
-    const res = await automationClient.get("/poller/log");
-    return res.data;
-  },
+// Settings APIs
+export const settingsApi = {
+  get: () => api.get('/api/settings'),
+  update: (data: Record<string, unknown>) => api.patch('/api/settings', data),
 };
 
 export default api;

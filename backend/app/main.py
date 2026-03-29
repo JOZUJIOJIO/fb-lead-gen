@@ -1,64 +1,66 @@
-import logging
-import os
+"""FastAPI application entry point."""
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from passlib.context import CryptContext
+from sqlalchemy import select
 
-from app.database import Base, engine, SessionLocal
+from app.config import settings
+from app.database import Base, async_session, engine
 from app.models import User
-from app.routers import analytics, auth, campaigns, conversations, leads, messages, persona, templates
-
-logger = logging.getLogger(__name__)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-Base.metadata.create_all(bind=engine)
+from app.routers import auth, campaigns, leads, personas, settings as settings_router
+from app.services.auth_service import hash_password
 
 
-def seed_default_admin():
-    """Create default admin account if it doesn't exist."""
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123456")
-    db = SessionLocal()
-    try:
-        if not db.query(User).filter(User.email == "admin@leadflow.com").first():
+async def seed_default_admin():
+    """Create the default admin user if no users exist."""
+    async with async_session() as session:
+        result = await session.execute(select(User).limit(1))
+        if result.scalar_one_or_none() is None:
             admin = User(
-                email="admin@leadflow.com",
-                hashed_password=pwd_context.hash(admin_password),
-                company_name="LeadFlow Demo",
+                email="admin@leadflow.ai",
+                hashed_password=hash_password(settings.ADMIN_PASSWORD),
             )
-            db.add(admin)
-            db.commit()
-            logger.info("Default admin account created: admin@leadflow.com")
-    finally:
-        db.close()
+            session.add(admin)
+            await session.commit()
 
 
-seed_default_admin()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: create tables and seed data
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    await seed_default_admin()
+    yield
+    # Shutdown: dispose engine
+    await engine.dispose()
+
 
 app = FastAPI(
     title="LeadFlow AI",
-    description="Facebook-to-WhatsApp AI Lead Generation Platform",
+    description="Social media lead generation powered by AI",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
+# CORS - allow all origins for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(auth.router, prefix="/auth", tags=["Auth"])
-app.include_router(leads.router, prefix="/leads", tags=["Leads"])
-app.include_router(campaigns.router, prefix="/campaigns", tags=["Campaigns"])
-app.include_router(messages.router, prefix="/messages", tags=["Messages"])
-app.include_router(templates.router, prefix="/templates", tags=["Templates"])
-app.include_router(conversations.router, prefix="/conversations", tags=["Conversations"])
-app.include_router(persona.router, prefix="/persona", tags=["Persona"])
-app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+# Include routers
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"])
+app.include_router(leads.router, prefix="/api/leads", tags=["leads"])
+app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
     return {"status": "ok"}

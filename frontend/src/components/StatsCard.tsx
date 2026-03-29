@@ -1,41 +1,29 @@
-import React from "react";
-import clsx from "clsx";
+'use client';
+
+import { LucideIcon } from 'lucide-react';
 
 interface StatsCardProps {
-  icon: React.ElementType;
-  value: string | number;
+  icon: LucideIcon;
   label: string;
-  trend?: { value: number; positive: boolean };
-  color?: string;
+  value: string | number;
+  trend?: { value: string; positive: boolean };
 }
 
-export default function StatsCard({
-  icon: Icon,
-  value,
-  label,
-  trend,
-  color = "bg-primary",
-}: StatsCardProps) {
+export default function StatsCard({ icon: Icon, label, value, trend }: StatsCardProps) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex items-start gap-4">
-      <div className={clsx("p-3 rounded-lg text-white", color)}>
-        <Icon className="h-6 w-6" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
-        <p className="text-sm text-gray-500 mt-1">{label}</p>
+    <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f5f5f7]">
+          <Icon className="h-5 w-5 text-[#86868b]" />
+        </div>
         {trend && (
-          <p
-            className={clsx(
-              "text-xs mt-1 font-medium",
-              trend.positive ? "text-green-600" : "text-red-600"
-            )}
-          >
-            {trend.positive ? "+" : ""}
-            {trend.value}% 较上周
-          </p>
+          <span className={`text-xs font-medium ${trend.positive ? 'text-emerald-600' : 'text-red-500'}`}>
+            {trend.positive ? '+' : ''}{trend.value}
+          </span>
         )}
       </div>
+      <p className="text-sm text-[#86868b] mb-1">{label}</p>
+      <p className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">{value}</p>
     </div>
   );
 }

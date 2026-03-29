@@ -1,163 +1,255 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+"""Campaigns router — CRUD + start/pause/stop."""
+
+import asyncio
+import logging
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import Campaign, CampaignStatus, Lead, Message, MessageMode, MessageStatus, Template, User
-from app.routers.auth import get_current_user
-from app.schemas import CampaignCreate, CampaignResponse, CampaignUpdate
-from app.services.ai_engine import generate_message
-from app.services.whatsapp import generate_click_to_chat_link
+from app.models import Campaign, CampaignStatus, Lead, Message, PlatformEnum, User
+from app.services.auth_service import get_current_user
+from app.services.campaign_runner import run_campaign
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Track running campaign tasks so we can cancel them
+_running_tasks: dict[int, asyncio.Task] = {}
 
-def _enrich_campaign(campaign: Campaign, db: Session) -> dict:
-    message_count = db.query(Message).filter(Message.campaign_id == campaign.id).count()
-    sent_count = (
-        db.query(Message)
-        .filter(Message.campaign_id == campaign.id, Message.status.in_(["sent", "delivered", "read", "replied"]))
-        .count()
+
+# ---------- Schemas ----------
+
+class CampaignCreate(BaseModel):
+    platform: str = "facebook"
+    search_keywords: str
+    search_region: str = ""
+    search_industry: str = ""
+    persona_id: Optional[int] = None
+    send_limit: int = 20
+
+
+class CampaignResponse(BaseModel):
+    id: int
+    platform: str
+    search_keywords: Optional[str]
+    search_region: Optional[str]
+    search_industry: Optional[str]
+    persona_id: Optional[int]
+    send_limit: int
+    status: str
+    progress_current: int
+    progress_total: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LeadBrief(BaseModel):
+    id: int
+    name: Optional[str]
+    status: str
+    profile_url: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CampaignDetail(CampaignResponse):
+    leads: list[LeadBrief] = []
+
+
+# ---------- Endpoints ----------
+
+@router.post("/", response_model=CampaignResponse, status_code=201)
+async def create_campaign(
+    body: CampaignCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    campaign = Campaign(
+        platform=PlatformEnum(body.platform),
+        search_keywords=body.search_keywords,
+        search_region=body.search_region,
+        search_industry=body.search_industry,
+        persona_id=body.persona_id,
+        send_limit=body.send_limit,
+        status=CampaignStatus.draft,
     )
-    replied_count = (
-        db.query(Message)
-        .filter(Message.campaign_id == campaign.id, Message.status == "replied")
-        .count()
+    db.add(campaign)
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign
+
+
+@router.get("/", response_model=list[CampaignResponse])
+async def list_campaigns(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Campaign).order_by(Campaign.created_at.desc())
     )
-    return CampaignResponse(
+    return result.scalars().all()
+
+
+@router.get("/stats/overview")
+async def campaign_stats(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Dashboard stats."""
+    total_campaigns = (await db.execute(select(func.count(Campaign.id)))).scalar() or 0
+    active_campaigns = (
+        await db.execute(
+            select(func.count(Campaign.id)).where(Campaign.status == CampaignStatus.running)
+        )
+    ).scalar() or 0
+    total_leads = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
+    total_messages = (await db.execute(select(func.count(Message.id)))).scalar() or 0
+
+    return {
+        "total_campaigns": total_campaigns,
+        "active_campaigns": active_campaigns,
+        "total_leads": total_leads,
+        "total_messages": total_messages,
+    }
+
+
+@router.get("/{campaign_id}", response_model=CampaignDetail)
+async def get_campaign(
+    campaign_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Campaign)
+        .options(selectinload(Campaign.leads))
+        .where(Campaign.id == campaign_id)
+    )
+    campaign = result.scalar_one_or_none()
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    leads_brief = [
+        LeadBrief(
+            id=l.id,
+            name=l.name,
+            status=l.status.value,
+            profile_url=l.profile_url,
+            created_at=l.created_at,
+        )
+        for l in campaign.leads
+    ]
+    return CampaignDetail(
         id=campaign.id,
-        name=campaign.name,
-        target_criteria=campaign.target_criteria,
-        message_template_id=campaign.message_template_id,
-        status=campaign.status.value if isinstance(campaign.status, CampaignStatus) else campaign.status,
+        platform=campaign.platform.value,
+        search_keywords=campaign.search_keywords,
+        search_region=campaign.search_region,
+        search_industry=campaign.search_industry,
+        persona_id=campaign.persona_id,
+        send_limit=campaign.send_limit,
+        status=campaign.status.value,
+        progress_current=campaign.progress_current,
+        progress_total=campaign.progress_total,
         created_at=campaign.created_at,
         updated_at=campaign.updated_at,
-        message_count=message_count,
-        sent_count=sent_count,
-        replied_count=replied_count,
+        leads=leads_brief,
     )
 
 
-@router.get("", response_model=list[CampaignResponse])
-def list_campaigns(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    campaigns = db.query(Campaign).filter(Campaign.user_id == current_user.id).order_by(Campaign.created_at.desc()).all()
-    return [_enrich_campaign(c, db) for c in campaigns]
-
-
-@router.post("", response_model=CampaignResponse)
-def create_campaign(
-    data: CampaignCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    campaign = Campaign(**data.model_dump(), user_id=current_user.id)
-    db.add(campaign)
-    db.commit()
-    db.refresh(campaign)
-    return _enrich_campaign(campaign, db)
-
-
-@router.get("/{campaign_id}", response_model=CampaignResponse)
-def get_campaign(
+@router.post("/{campaign_id}/start")
+async def start_campaign(
     campaign_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.user_id == current_user.id).first()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    return _enrich_campaign(campaign, db)
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id)
+    )
+    campaign = result.scalar_one_or_none()
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if campaign.status == CampaignStatus.running:
+        raise HTTPException(status_code=400, detail="任务已在运行中")
+
+    # Launch as background asyncio task
+    task = asyncio.create_task(run_campaign(campaign_id))
+    _running_tasks[campaign_id] = task
+    task.add_done_callback(lambda t: _running_tasks.pop(campaign_id, None))
+
+    return {"message": "任务已启动", "campaign_id": campaign_id}
 
 
-@router.put("/{campaign_id}", response_model=CampaignResponse)
-def update_campaign(
+@router.post("/{campaign_id}/pause")
+async def pause_campaign(
     campaign_id: int,
-    data: CampaignUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.user_id == current_user.id).first()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    for key, value in data.model_dump(exclude_unset=True).items():
-        setattr(campaign, key, value)
-    db.commit()
-    db.refresh(campaign)
-    return _enrich_campaign(campaign, db)
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id)
+    )
+    campaign = result.scalar_one_or_none()
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if campaign.status != CampaignStatus.running:
+        raise HTTPException(status_code=400, detail="任务未在运行中")
+
+    campaign.status = CampaignStatus.paused
+    await db.commit()
+    return {"message": "任务已暂停", "campaign_id": campaign_id}
 
 
-@router.delete("/{campaign_id}")
-def delete_campaign(
+@router.post("/{campaign_id}/stop")
+async def stop_campaign(
     campaign_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.user_id == current_user.id).first()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    db.delete(campaign)
-    db.commit()
-    return {"detail": "Campaign deleted"}
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id)
+    )
+    campaign = result.scalar_one_or_none()
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    campaign.status = CampaignStatus.failed
+    await db.commit()
+
+    # Cancel the running task if exists
+    task = _running_tasks.pop(campaign_id, None)
+    if task and not task.done():
+        task.cancel()
+
+    return {"message": "任务已停止", "campaign_id": campaign_id}
 
 
-@router.post("/{campaign_id}/launch")
-def launch_campaign(
+@router.delete("/{campaign_id}", status_code=204)
+async def delete_campaign(
     campaign_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.user_id == current_user.id).first()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id)
+    )
+    campaign = result.scalar_one_or_none()
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
 
-    template = None
-    if campaign.message_template_id:
-        template = db.query(Template).filter(Template.id == campaign.message_template_id).first()
+    # Stop if running
+    task = _running_tasks.pop(campaign_id, None)
+    if task and not task.done():
+        task.cancel()
 
-    criteria = campaign.target_criteria or {}
-    min_score = criteria.get("min_score", 60)
-    status_filter = criteria.get("status", None)
-
-    query = db.query(Lead).filter(Lead.user_id == current_user.id, Lead.score >= min_score)
-    if status_filter:
-        query = query.filter(Lead.status == status_filter)
-
-    leads = query.all()
-    messages_created = 0
-
-    for lead in leads:
-        existing = (
-            db.query(Message)
-            .filter(Message.lead_id == lead.id, Message.campaign_id == campaign.id)
-            .first()
-        )
-        if existing:
-            continue
-
-        template_body = template.body if template else "Hi {{name}}, I'd like to connect with you about {{company}}."
-        content = generate_message(
-            lead_name=lead.name,
-            lead_company=lead.company,
-            lead_data=lead.profile_data,
-            template_body=template_body,
-            language=lead.language,
-        )
-        link = generate_click_to_chat_link(lead.phone, content) if lead.phone else ""
-
-        msg = Message(
-            lead_id=lead.id,
-            campaign_id=campaign.id,
-            content=content,
-            mode=MessageMode.click_to_chat,
-            click_to_chat_link=link,
-            status=MessageStatus.pending_approval,
-            user_id=current_user.id,
-        )
-        db.add(msg)
-        messages_created += 1
-
-    campaign.status = CampaignStatus.active
-    db.commit()
-    return {"messages_created": messages_created, "total_leads": len(leads)}
+    await db.delete(campaign)
+    await db.commit()
