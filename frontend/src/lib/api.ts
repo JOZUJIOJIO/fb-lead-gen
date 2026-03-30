@@ -48,6 +48,9 @@ export const campaignApi = {
   pause: (id: string) => api.post(`/api/campaigns/${id}/pause`),
   stop: (id: string) => api.post(`/api/campaigns/${id}/stop`),
   stats: () => api.get('/api/campaigns/stats/overview'),
+  pending: (id: string) => api.get(`/api/campaigns/${id}/pending`),
+  review: (id: string, lead_id: number, action: string) =>
+    api.post(`/api/campaigns/${id}/review`, { lead_id, action }),
 };
 
 // Lead APIs

@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import random
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +39,60 @@ def _campaign_to_persona_dict(campaign: Campaign) -> dict:
         "conversation_rules": persona.conversation_rules,
         "system_prompt": persona.system_prompt,
     }
+
+
+async def _wait_for_send_window(campaign: "Campaign") -> None:
+    """If current time is outside the campaign's send window, sleep until it opens."""
+    try:
+        tz = ZoneInfo(campaign.timezone)
+    except Exception:
+        tz = ZoneInfo("Asia/Shanghai")
+
+    while True:
+        now = datetime.now(tz)
+        hour = now.hour
+        start, end = campaign.send_hour_start, campaign.send_hour_end
+
+        if start <= end:
+            # Normal window e.g. 9-18
+            in_window = start <= hour < end
+        else:
+            # Overnight window e.g. 22-6
+            in_window = hour >= start or hour < end
+
+        if in_window:
+            return
+
+        # Calculate seconds until window opens
+        if start <= end:
+            target_hour = start
+        else:
+            target_hour = start if hour < start else start
+
+        wait_minutes = ((target_hour - hour) % 24) * 60 - now.minute
+        if wait_minutes <= 0:
+            wait_minutes = 1
+
+        logger.info(
+            "Campaign %d: outside send window (%02d:00-%02d:00 %s), current=%02d:%02d, waiting %d min",
+            campaign.id, start, end, campaign.timezone, hour, now.minute, wait_minutes,
+        )
+        await asyncio.sleep(min(wait_minutes * 60, 300))  # Re-check every 5 min max
+
+
+async def _is_already_contacted(session: AsyncSession, platform_user_id: str, platform: str) -> bool:
+    """Check if this person has already been contacted in ANY campaign."""
+    if not platform_user_id:
+        return False
+    from app.models import PlatformEnum as PE
+    result = await session.execute(
+        select(Lead.id).where(
+            Lead.platform_user_id == platform_user_id,
+            Lead.platform == PE(platform),
+            Lead.status != LeadStatus.failed,
+        ).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def _refresh_campaign_status(session: AsyncSession, campaign_id: int) -> CampaignStatus:
@@ -126,10 +182,21 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
 
                 profile_url = target.get("profile_url", "")
                 target_name = target.get("name", "unknown")
+                platform_uid = target.get("platform_user_id", "")
                 logger.info(
                     "Campaign %d: processing %d/%d — %s",
                     campaign_id, idx + 1, len(targets), target_name,
                 )
+
+                # 4a-pre. Global dedup: skip if already contacted in any campaign
+                if await _is_already_contacted(session, platform_uid, "facebook"):
+                    logger.info(
+                        "Campaign %d: SKIP %s (already contacted in another campaign)",
+                        campaign_id, target_name,
+                    )
+                    campaign.progress_current = idx + 1
+                    await session.commit()
+                    continue
 
                 # 4a. Save as Lead (status=found)
                 lead = Lead(
@@ -176,12 +243,13 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                         await session.commit()
                         continue
 
-                    # 4e. Send message
-                    success = await adapter.send_message(profile_url, greeting)
+                    # 4e-pre. Wait for send window
+                    await _wait_for_send_window(campaign)
 
-                    if success:
-                        lead.status = LeadStatus.messaged
-                        # Record the outbound message
+                    # 4e. Send message (or queue for review)
+                    if campaign.review_mode:
+                        # Review mode: save message but don't send
+                        lead.status = LeadStatus.pending_review
                         msg = Message(
                             lead_id=lead.id,
                             direction=MessageDirection.outbound,
@@ -189,8 +257,21 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                             ai_generated=True,
                         )
                         session.add(msg)
+                        logger.info("Campaign %d: queued message for review — %s", campaign_id, target_name)
                     else:
-                        lead.status = LeadStatus.failed
+                        # Auto mode: send immediately
+                        success = await adapter.send_message(profile_url, greeting)
+                        if success:
+                            lead.status = LeadStatus.messaged
+                            msg = Message(
+                                lead_id=lead.id,
+                                direction=MessageDirection.outbound,
+                                content=greeting,
+                                ai_generated=True,
+                            )
+                            session.add(msg)
+                        else:
+                            lead.status = LeadStatus.failed
 
                     await session.commit()
 

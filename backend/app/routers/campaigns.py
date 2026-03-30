@@ -33,6 +33,10 @@ class CampaignCreate(BaseModel):
     search_industry: str = ""
     persona_id: Optional[int] = None
     send_limit: int = 20
+    review_mode: bool = False
+    send_hour_start: int = 9
+    send_hour_end: int = 18
+    timezone: str = "Asia/Shanghai"
 
 
 class CampaignResponse(BaseModel):
@@ -44,6 +48,10 @@ class CampaignResponse(BaseModel):
     search_industry: Optional[str]
     persona_id: Optional[int]
     send_limit: int
+    review_mode: bool
+    send_hour_start: int
+    send_hour_end: int
+    timezone: str
     status: str
     progress_current: int
     progress_total: int
@@ -85,6 +93,10 @@ async def create_campaign(
         search_industry=body.search_industry,
         persona_id=body.persona_id,
         send_limit=body.send_limit,
+        review_mode=body.review_mode,
+        send_hour_start=body.send_hour_start,
+        send_hour_end=body.send_hour_end,
+        timezone=body.timezone,
         status=CampaignStatus.draft,
     )
     db.add(campaign)
@@ -109,7 +121,9 @@ async def campaign_stats(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Dashboard stats."""
+    """Dashboard stats with reply rates."""
+    from app.models import LeadStatus
+
     total_campaigns = (await db.execute(select(func.count(Campaign.id)))).scalar() or 0
     active_campaigns = (
         await db.execute(
@@ -119,11 +133,67 @@ async def campaign_stats(
     total_leads = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
     total_messages = (await db.execute(select(func.count(Message.id)))).scalar() or 0
 
+    # Reply stats
+    messaged_count = (await db.execute(
+        select(func.count(Lead.id)).where(Lead.status.in_([
+            LeadStatus.messaged, LeadStatus.replied, LeadStatus.converted
+        ]))
+    )).scalar() or 0
+    replied_count = (await db.execute(
+        select(func.count(Lead.id)).where(Lead.status.in_([
+            LeadStatus.replied, LeadStatus.converted
+        ]))
+    )).scalar() or 0
+    converted_count = (await db.execute(
+        select(func.count(Lead.id)).where(Lead.status == LeadStatus.converted)
+    )).scalar() or 0
+    pending_review_count = (await db.execute(
+        select(func.count(Lead.id)).where(Lead.status == LeadStatus.pending_review)
+    )).scalar() or 0
+    skipped_count = (await db.execute(
+        select(func.count(Lead.id)).where(Lead.status == LeadStatus.rejected)
+    )).scalar() or 0
+
+    reply_rate = round((replied_count / messaged_count * 100), 1) if messaged_count > 0 else 0
+
+    # Per-campaign stats
+    campaign_stats_list = []
+    campaigns_result = await db.execute(
+        select(Campaign).order_by(Campaign.created_at.desc()).limit(10)
+    )
+    for c in campaigns_result.scalars().all():
+        c_messaged = (await db.execute(
+            select(func.count(Lead.id)).where(
+                Lead.campaign_id == c.id,
+                Lead.status.in_([LeadStatus.messaged, LeadStatus.replied, LeadStatus.converted])
+            )
+        )).scalar() or 0
+        c_replied = (await db.execute(
+            select(func.count(Lead.id)).where(
+                Lead.campaign_id == c.id,
+                Lead.status.in_([LeadStatus.replied, LeadStatus.converted])
+            )
+        )).scalar() or 0
+        campaign_stats_list.append({
+            "id": c.id,
+            "name": c.name or c.search_keywords or "未命名",
+            "messaged": c_messaged,
+            "replied": c_replied,
+            "reply_rate": round((c_replied / c_messaged * 100), 1) if c_messaged > 0 else 0,
+        })
+
     return {
         "total_campaigns": total_campaigns,
         "active_campaigns": active_campaigns,
         "total_leads": total_leads,
         "total_messages": total_messages,
+        "messaged_count": messaged_count,
+        "replied_count": replied_count,
+        "converted_count": converted_count,
+        "pending_review_count": pending_review_count,
+        "skipped_count": skipped_count,
+        "reply_rate": reply_rate,
+        "campaign_stats": campaign_stats_list,
     }
 
 
@@ -161,6 +231,10 @@ async def get_campaign(
         search_industry=campaign.search_industry,
         persona_id=campaign.persona_id,
         send_limit=campaign.send_limit,
+        review_mode=campaign.review_mode,
+        send_hour_start=campaign.send_hour_start,
+        send_hour_end=campaign.send_hour_end,
+        timezone=campaign.timezone,
         status=campaign.status.value,
         progress_current=campaign.progress_current,
         progress_total=campaign.progress_total,
@@ -257,3 +331,94 @@ async def delete_campaign(
 
     await db.delete(campaign)
     await db.commit()
+
+
+# ---------- Review / Approve ----------
+
+@router.get("/{campaign_id}/pending", response_model=list[LeadBrief])
+async def get_pending_reviews(
+    campaign_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get leads awaiting review for a campaign."""
+    from app.models import LeadStatus
+    result = await db.execute(
+        select(Lead).where(
+            Lead.campaign_id == campaign_id,
+            Lead.status == LeadStatus.pending_review,
+        ).order_by(Lead.created_at.desc())
+    )
+    leads = result.scalars().all()
+    return [
+        LeadBrief(
+            id=l.id, name=l.name, status=l.status.value,
+            profile_url=l.profile_url, created_at=l.created_at,
+        ) for l in leads
+    ]
+
+
+class ReviewAction(BaseModel):
+    lead_id: int
+    action: str  # "approve" or "reject"
+
+
+@router.post("/{campaign_id}/review")
+async def review_lead_message(
+    campaign_id: int,
+    body: ReviewAction,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Approve or reject a pending message. Approved = send now."""
+    from app.models import LeadStatus, Message, MessageDirection
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(Lead).options(selectinload(Lead.messages))
+        .where(Lead.id == body.lead_id, Lead.campaign_id == campaign_id)
+    )
+    lead = result.scalar_one_or_none()
+    if lead is None:
+        raise HTTPException(status_code=404, detail="线索不存在")
+    if lead.status != LeadStatus.pending_review:
+        raise HTTPException(status_code=400, detail="该线索不在待审核状态")
+
+    if body.action == "reject":
+        lead.status = LeadStatus.rejected
+        await db.commit()
+        return {"message": "已拒绝", "lead_id": lead.id}
+
+    if body.action == "approve":
+        # Find the pending outbound message
+        pending_msg = None
+        for m in lead.messages:
+            if m.direction == MessageDirection.outbound:
+                pending_msg = m
+                break
+
+        if not pending_msg:
+            raise HTTPException(status_code=400, detail="没有待发送的消息")
+
+        # Send via Facebook adapter
+        from app.adapters.platforms.facebook import FacebookAdapter
+        adapter = FacebookAdapter()
+        try:
+            await adapter.initialize()
+            success = await adapter.send_message(lead.profile_url, pending_msg.content)
+            if success:
+                lead.status = LeadStatus.messaged
+            else:
+                lead.status = LeadStatus.failed
+            await db.commit()
+        except Exception as e:
+            logger.error("Review approve: send failed for lead %d: %s", lead.id, e)
+            lead.status = LeadStatus.failed
+            await db.commit()
+            raise HTTPException(status_code=500, detail=f"发送失败: {e}")
+        finally:
+            await adapter.close()
+
+        return {"message": "已批准并发送", "lead_id": lead.id}
+
+    raise HTTPException(status_code=400, detail="action 必须为 approve 或 reject")

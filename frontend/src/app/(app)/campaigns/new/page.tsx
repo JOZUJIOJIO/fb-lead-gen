@@ -26,6 +26,9 @@ export default function NewCampaignPage() {
   const [industry, setIndustry] = useState('');
   const [personaId, setPersonaId] = useState('');
   const [sendLimit, setSendLimit] = useState(20);
+  const [reviewMode, setReviewMode] = useState(false);
+  const [sendHourStart, setSendHourStart] = useState(9);
+  const [sendHourEnd, setSendHourEnd] = useState(18);
   const [campaignName, setCampaignName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
@@ -49,6 +52,9 @@ export default function NewCampaignPage() {
         search_industry: industry,
         persona_id: personaId ? Number(personaId) : null,
         send_limit: sendLimit,
+        review_mode: reviewMode,
+        send_hour_start: sendHourStart,
+        send_hour_end: sendHourEnd,
       });
       router.push('/campaigns');
     } catch (err: unknown) {
@@ -222,6 +228,56 @@ export default function NewCampaignPage() {
               className="w-32 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
             />
             <span className="ml-2 text-sm text-[#86868b]">条消息</span>
+          </div>
+        </div>
+
+        {/* Step 5: Safety Settings */}
+        <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0071e3] text-xs font-semibold text-white">5</span>
+            <h2 className="text-base font-semibold text-[#1d1d1f]">安全设置</h2>
+          </div>
+          <p className="mb-4 ml-8 text-sm text-[#86868b]">控制消息发送的安全策略</p>
+          <div className="ml-8 space-y-5">
+            {/* Review Mode */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={reviewMode}
+                onChange={(e) => setReviewMode(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[#e5e5e7] text-[#0071e3] focus:ring-[#0071e3]"
+              />
+              <div>
+                <span className="text-sm font-medium text-[#1d1d1f]">消息审核模式</span>
+                <p className="text-xs text-[#86868b] mt-0.5">AI 生成消息后不会自动发送，需要你逐条审核批准后才会发出</p>
+              </div>
+            </label>
+            {/* Time Window */}
+            <div>
+              <span className="text-sm font-medium text-[#1d1d1f]">发送时间窗口</span>
+              <p className="text-xs text-[#86868b] mt-0.5 mb-2">只在指定时段内发送消息，避免深夜打扰</p>
+              <div className="flex items-center gap-2">
+                <select
+                  value={sendHourStart}
+                  onChange={(e) => setSendHourStart(Number(e.target.value))}
+                  className="rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-3 py-2 text-sm text-[#1d1d1f] outline-none focus:border-[#0071e3] focus:bg-white"
+                >
+                  {Array.from({ length: 24 }, (_, i) => (
+                    <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                  ))}
+                </select>
+                <span className="text-sm text-[#86868b]">至</span>
+                <select
+                  value={sendHourEnd}
+                  onChange={(e) => setSendHourEnd(Number(e.target.value))}
+                  className="rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-3 py-2 text-sm text-[#1d1d1f] outline-none focus:border-[#0071e3] focus:bg-white"
+                >
+                  {Array.from({ length: 24 }, (_, i) => (
+                    <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 

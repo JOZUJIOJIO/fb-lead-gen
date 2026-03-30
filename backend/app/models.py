@@ -39,9 +39,11 @@ class CampaignStatus(str, enum.Enum):
 class LeadStatus(str, enum.Enum):
     found = "found"
     analyzing = "analyzing"
+    pending_review = "pending_review"
     messaged = "messaged"
     replied = "replied"
     converted = "converted"
+    rejected = "rejected"
     failed = "failed"
 
 
@@ -103,6 +105,10 @@ class Campaign(Base):
         Integer, ForeignKey("personas.id", ondelete="SET NULL"), nullable=True
     )
     send_limit: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    review_mode: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    send_hour_start: Mapped[int] = mapped_column(Integer, default=9, nullable=False)
+    send_hour_end: Mapped[int] = mapped_column(Integer, default=18, nullable=False)
+    timezone: Mapped[str] = mapped_column(String(50), default="Asia/Shanghai", nullable=False)
     status: Mapped[CampaignStatus] = mapped_column(
         Enum(CampaignStatus, name="campaign_status_enum"),
         default=CampaignStatus.draft,
