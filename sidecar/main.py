@@ -9,6 +9,7 @@ from typing import Optional
 
 from db import Database
 from jsonrpc import JsonRpcServer
+from services.ai_service import AIConfig
 
 # ---------------------------------------------------------------------------
 # Logging — all output goes to stderr; stdout is reserved for JSON-RPC traffic
@@ -43,20 +44,12 @@ def _rows_to_list(rows) -> list:
     return [dict(r) for r in rows]
 
 
-async def _get_ai_config() -> dict:
-    """Read AI provider settings from the database.
-
-    Returns a dict with keys: ai_provider, api_key, base_url.
-    Task 8 will consume this when wiring up the AI service.
-    """
-    provider = await _db.get_setting("ai_provider")
-    api_key = await _db.get_setting("api_key")
-    base_url = await _db.get_setting("base_url")
-    return {
-        "ai_provider": provider,
-        "api_key": api_key,
-        "base_url": base_url,
-    }
+async def _get_ai_config() -> AIConfig:
+    """Read AI provider settings from the database and return an AIConfig."""
+    provider = await _db.get_setting("ai_provider") or "openai"
+    api_key = await _db.get_setting("api_key") or ""
+    base_url = await _db.get_setting("base_url") or None
+    return AIConfig(provider=provider, api_key=api_key, base_url=base_url)
 
 
 # ---------------------------------------------------------------------------
@@ -222,31 +215,38 @@ async def set_setting(key: str, value: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Campaign control (stubs — actual runner added in Task 8)
+# Campaign control
 # ---------------------------------------------------------------------------
 
 @server.method("start_campaign")
-async def start_campaign(campaign_id: int) -> dict:
-    logger.info("start_campaign %s (stub)", campaign_id)
-    await _db.update_campaign(campaign_id, status="running")
+async def rpc_start_campaign(campaign_id: int) -> dict:
+    from services.campaign_runner import start_campaign
+    ai_config = await _get_ai_config()
+    message = await start_campaign(campaign_id, _db, ai_config)
     row = await _db.get_campaign(campaign_id)
-    return _row_to_dict(row)
+    result = _row_to_dict(row) or {}
+    result["message"] = message
+    return result
 
 
 @server.method("pause_campaign")
-async def pause_campaign(campaign_id: int) -> dict:
-    logger.info("pause_campaign %s (stub)", campaign_id)
-    await _db.update_campaign(campaign_id, status="paused")
+async def rpc_pause_campaign(campaign_id: int) -> dict:
+    from services.campaign_runner import pause_campaign
+    message = await pause_campaign(campaign_id, _db)
     row = await _db.get_campaign(campaign_id)
-    return _row_to_dict(row)
+    result = _row_to_dict(row) or {}
+    result["message"] = message
+    return result
 
 
 @server.method("stop_campaign")
-async def stop_campaign(campaign_id: int) -> dict:
-    logger.info("stop_campaign %s (stub)", campaign_id)
-    await _db.update_campaign(campaign_id, status="stopped")
+async def rpc_stop_campaign(campaign_id: int) -> dict:
+    from services.campaign_runner import stop_campaign
+    message = await stop_campaign(campaign_id, _db)
     row = await _db.get_campaign(campaign_id)
-    return _row_to_dict(row)
+    result = _row_to_dict(row) or {}
+    result["message"] = message
+    return result
 
 
 # ---------------------------------------------------------------------------

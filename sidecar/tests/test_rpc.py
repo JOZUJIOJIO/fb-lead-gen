@@ -1,5 +1,7 @@
 """Tests for JSON-RPC handler wiring in main.py."""
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 
@@ -248,22 +250,66 @@ async def test_get_and_set_setting():
 
 
 # ---------------------------------------------------------------------------
-# Campaign control stubs
+# Campaign control
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_start_pause_stop_campaign():
+async def test_start_campaign_returns_message():
+    """start_campaign should enqueue a background task and return a message."""
     created = await call("create_campaign", platform="facebook", send_limit=5)
     campaign_id = created["id"]
 
-    started = await call("start_campaign", campaign_id=campaign_id)
-    assert started["status"] == "running"
+    result = await call("start_campaign", campaign_id=campaign_id)
+    # The RPC handler returns the campaign row merged with a message key.
+    assert "message" in result
+    assert str(campaign_id) in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_pause_campaign_sets_status(isolated_db):
+    """pause_campaign should set DB status to paused."""
+    campaign_id = await isolated_db.create_campaign(platform="facebook", send_limit=5)
 
     paused = await call("pause_campaign", campaign_id=campaign_id)
     assert paused["status"] == "paused"
+    assert "message" in paused
+
+
+@pytest.mark.asyncio
+async def test_stop_campaign_sets_status(isolated_db):
+    """stop_campaign should set DB status to stopped."""
+    campaign_id = await isolated_db.create_campaign(platform="facebook", send_limit=5)
 
     stopped = await call("stop_campaign", campaign_id=campaign_id)
     assert stopped["status"] == "stopped"
+    assert "message" in stopped
+
+
+@pytest.mark.asyncio
+async def test_start_campaign_concurrent_limit(isolated_db):
+    """Starting more than MAX_CONCURRENT_CAMPAIGNS should raise an error."""
+    from services import campaign_runner
+
+    # Temporarily inject fake running tasks to hit the limit
+    fake_tasks: dict = {}
+    for i in range(campaign_runner.MAX_CONCURRENT_CAMPAIGNS):
+        # Create a never-ending coroutine as a fake task
+        async def _never():
+            await asyncio.sleep(9999)
+        t = asyncio.create_task(_never())
+        fake_tasks[-(i + 1)] = t
+
+    original = campaign_runner._running_tasks.copy()
+    campaign_runner._running_tasks.update(fake_tasks)
+    try:
+        campaign_id = await isolated_db.create_campaign(platform="facebook", send_limit=5)
+        with pytest.raises(ValueError, match="concurrent limit"):
+            await campaign_runner.start_campaign(campaign_id, isolated_db, None)
+    finally:
+        for t in fake_tasks.values():
+            t.cancel()
+        campaign_runner._running_tasks.clear()
+        campaign_runner._running_tasks.update(original)
 
 
 # ---------------------------------------------------------------------------
