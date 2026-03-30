@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Plus } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { campaignApi } from '@/lib/api';
@@ -20,6 +21,7 @@ interface Campaign {
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     campaignApi.list()
@@ -69,6 +71,7 @@ export default function CampaignsPage() {
             {campaigns.map((campaign) => (
               <tr
                 key={campaign.id}
+                onClick={() => router.push(`/campaigns/${campaign.id}`)}
                 className="cursor-pointer transition-colors hover:bg-[#f5f5f7]/50"
               >
                 <td className="px-6 py-4">
