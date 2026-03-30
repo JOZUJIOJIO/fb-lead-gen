@@ -440,8 +440,193 @@ class FacebookAdapter(PlatformAdapter):
     # -- Inbox ---------------------------------------------------------------
 
     async def read_new_messages(self) -> list[dict]:
-        """Read new/unread incoming messages. Stub — returns empty list for now."""
-        return []
+        """Read new/unread incoming messages from the Facebook Messenger inbox.
+
+        Navigates to the Messenger page, looks for unread conversation
+        indicators, opens each one (up to 10), reads the last inbound
+        message, and returns structured data.
+
+        Returns:
+            list of dicts, each with:
+                - sender_id   (str)  — extracted from the conversation URL
+                - sender_name (str)
+                - content     (str)  — text of the latest message
+                - timestamp   (str)  — ISO-8601 UTC string (best-effort; may be empty)
+        """
+        if not self._page:
+            raise RuntimeError("Adapter not initialized. Call initialize() first.")
+
+        page = self._page
+        results: list[dict] = []
+
+        try:
+            await page.goto(
+                "https://www.facebook.com/messages/t/",
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+            await _random_delay(3, 5)
+            await _random_mouse_move(page)
+
+            # ------------------------------------------------------------------
+            # Locate unread conversation entries in the left-hand sidebar.
+            # Facebook marks unread threads with a bold label or a blue dot.
+            # We try several selectors in order of specificity.
+            # ------------------------------------------------------------------
+            unread_selectors = [
+                # Blue unread dot next to the thread row
+                'div[role="navigation"] a[aria-label][href*="/messages/t/"]'
+                ':has(span[data-testid="unread_count"])',
+                # Bold thread name = unread in classic Messenger layout
+                'div[role="navigation"] a[href*="/messages/t/"]'
+                ':has(span[style*="font-weight: 700"])',
+                # Fallback: all conversation links (we'll check content below)
+                'div[role="navigation"] a[href*="/messages/t/"]',
+                # Alternate navigation container
+                'ul[role="listbox"] a[href*="/messages/t/"]',
+                'div[data-pagelet="MWLeftRail"] a[href*="/messages/t/"]',
+            ]
+
+            thread_links: list = []
+            for sel in unread_selectors:
+                try:
+                    found = await page.query_selector_all(sel)
+                    if found:
+                        thread_links = found
+                        logger.info(
+                            "read_new_messages: found %d thread links via selector '%s'",
+                            len(found),
+                            sel[:60],
+                        )
+                        break
+                except Exception as sel_err:
+                    logger.debug("Selector '%s' failed: %s", sel[:60], sel_err)
+
+            if not thread_links:
+                logger.info("read_new_messages: no unread conversation links found.")
+                return []
+
+            # Process up to 10 threads
+            for link_el in thread_links[:10]:
+                try:
+                    await self._read_thread(page, link_el, results)
+                except Exception as thread_err:
+                    logger.warning("read_new_messages: error reading thread: %s", thread_err)
+
+        except Exception as e:
+            logger.error("read_new_messages failed: %s", e, exc_info=True)
+            try:
+                await _save_screenshot(page, "read_messages_error")
+            except Exception:
+                pass
+
+        logger.info("read_new_messages: returning %d message(s).", len(results))
+        return results
+
+    async def _read_thread(
+        self, page: "Page", link_el, results: list[dict]
+    ) -> None:
+        """Click a thread link, extract the last inbound message, append to results."""
+        # Grab the href before clicking (clicking may navigate away)
+        href: str = (await link_el.get_attribute("href")) or ""
+
+        # Extract sender_id from the conversation URL.
+        # URLs look like: /messages/t/123456789  or  /messages/t/username
+        sender_id = ""
+        if "/messages/t/" in href:
+            sender_id = href.split("/messages/t/")[-1].split("?")[0].split("/")[0].strip()
+
+        if not sender_id:
+            logger.debug("_read_thread: could not extract sender_id from href=%s", href)
+            return
+
+        # Navigate to the conversation
+        full_url = href if href.startswith("http") else f"https://www.facebook.com{href}"
+        await page.goto(full_url, wait_until="domcontentloaded", timeout=30000)
+        await _random_delay(2, 4)
+
+        # Try to get the thread participant name from the page heading
+        sender_name = ""
+        name_selectors = [
+            'h2[dir="auto"]',
+            'div[data-pagelet="MWThreadlist"] h2',
+            'span[dir="auto"][style*="font-weight: 700"]',
+            # Fallback: the <title> often contains the contact name
+        ]
+        for sel in name_selectors:
+            try:
+                el = await page.query_selector(sel)
+                if el:
+                    text = (await el.inner_text()).strip()
+                    if text:
+                        sender_name = text
+                        break
+            except Exception:
+                pass
+
+        if not sender_name:
+            # Last resort: pull from <title>
+            try:
+                title = await page.title()
+                sender_name = title.split("|")[0].strip() if "|" in title else title.strip()
+            except Exception:
+                sender_name = sender_id  # use ID as fallback
+
+        # ------------------------------------------------------------------
+        # Extract the last message in the thread.
+        # We look for message bubbles that are NOT from us (i.e. inbound).
+        # ------------------------------------------------------------------
+        message_content = ""
+        timestamp_str = ""
+
+        # Multiple fallback selectors for message bubbles
+        bubble_selectors = [
+            # Inbound messages often lack the "you" aria label
+            'div[data-scope="messages_table"] div[dir="auto"]:not([aria-label*="You"])',
+            'div[role="row"] div[dir="auto"]',
+            'div[data-testid="message-container"] div[dir="auto"]',
+            # Very generic fallback
+            'div[class*="message"] div[dir="auto"]',
+        ]
+
+        for sel in bubble_selectors:
+            try:
+                bubbles = await page.query_selector_all(sel)
+                if bubbles:
+                    # Take the last bubble as the most recent message
+                    last_bubble = bubbles[-1]
+                    text = (await last_bubble.inner_text()).strip()
+                    if text:
+                        message_content = text
+                        # Attempt to read a nearby timestamp
+                        try:
+                            ts_el = await last_bubble.query_selector(
+                                'abbr[data-utime], span[data-utime], span[title*=":"]'
+                            )
+                            if ts_el:
+                                timestamp_str = (
+                                    await ts_el.get_attribute("data-utime")
+                                    or await ts_el.get_attribute("title")
+                                    or ""
+                                )
+                        except Exception:
+                            pass
+                        break
+            except Exception as bsel_err:
+                logger.debug("Bubble selector '%s' failed: %s", sel[:60], bsel_err)
+
+        if not message_content:
+            logger.debug("_read_thread: no message content found for sender_id=%s", sender_id)
+            return
+
+        results.append(
+            {
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "content": message_content,
+                "timestamp": timestamp_str,
+            }
+        )
 
     # -- Cleanup -------------------------------------------------------------
 
