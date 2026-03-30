@@ -4,30 +4,28 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
+import { campaignApi } from '@/lib/api';
 
 interface Campaign {
-  id: string;
-  name: string;
+  id: number;
+  name: string | null;
   platform: string;
   status: string;
-  sent: number;
-  limit: number;
+  search_keywords: string | null;
+  progress_current: number;
+  send_limit: number;
   created_at: string;
 }
 
-const mockCampaigns: Campaign[] = [
-  { id: '1', name: 'Facebook 外贸客户开发', platform: 'Facebook', status: 'running', sent: 145, limit: 200, created_at: '2024-03-15' },
-  { id: '2', name: 'SaaS 决策者触达', platform: 'Facebook', status: 'paused', sent: 87, limit: 150, created_at: '2024-03-14' },
-  { id: '3', name: '跨境电商卖家联系', platform: 'Facebook', status: 'completed', sent: 200, limit: 200, created_at: '2024-03-10' },
-  { id: '4', name: '新能源行业推广', platform: 'Facebook', status: 'draft', sent: 0, limit: 100, created_at: '2024-03-16' },
-];
-
 export default function CampaignsPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>(mockCampaigns);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch real data
-    // campaignApi.list().then(res => setCampaigns(res.data));
+    campaignApi.list()
+      .then(res => setCampaigns(res.data))
+      .catch(err => console.error('Failed to load campaigns:', err))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
@@ -58,6 +56,16 @@ export default function CampaignsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e5e5e7]/40">
+            {loading && (
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td>
+              </tr>
+            )}
+            {!loading && campaigns.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center text-sm text-[#86868b]">暂无任务，点击「新建任务」开始</td>
+              </tr>
+            )}
             {campaigns.map((campaign) => (
               <tr
                 key={campaign.id}
@@ -65,11 +73,11 @@ export default function CampaignsPage() {
               >
                 <td className="px-6 py-4">
                   <Link href={`/campaigns/${campaign.id}`} className="text-sm font-medium text-[#1d1d1f] hover:text-[#0071e3]">
-                    {campaign.name}
+                    {campaign.name || campaign.search_keywords || '未命名任务'}
                   </Link>
                 </td>
                 <td className="px-6 py-4">
-                  <span className="text-sm text-[#86868b]">{campaign.platform}</span>
+                  <span className="text-sm text-[#86868b] capitalize">{campaign.platform}</span>
                 </td>
                 <td className="px-6 py-4">
                   <StatusBadge status={campaign.status} />
@@ -79,16 +87,16 @@ export default function CampaignsPage() {
                     <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#f0f0f2]">
                       <div
                         className="h-full rounded-full bg-[#0071e3] transition-all"
-                        style={{ width: `${(campaign.sent / campaign.limit) * 100}%` }}
+                        style={{ width: `${campaign.send_limit > 0 ? (campaign.progress_current / campaign.send_limit) * 100 : 0}%` }}
                       />
                     </div>
                     <span className="text-xs text-[#86868b]">
-                      {campaign.sent}/{campaign.limit}
+                      {campaign.progress_current}/{campaign.send_limit}
                     </span>
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <span className="text-sm text-[#86868b]">{campaign.created_at}</span>
+                  <span className="text-sm text-[#86868b]">{new Date(campaign.created_at).toLocaleDateString('zh-CN')}</span>
                 </td>
               </tr>
             ))}

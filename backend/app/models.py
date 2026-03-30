@@ -92,6 +92,7 @@ class Campaign(Base):
     __tablename__ = "campaigns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=True)
     platform: Mapped[PlatformEnum] = mapped_column(
         Enum(PlatformEnum, name="platform_enum"), nullable=False
     )

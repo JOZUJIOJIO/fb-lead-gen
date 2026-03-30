@@ -1,13 +1,29 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, X, Plus, Save, Eye } from 'lucide-react';
+import { ArrowLeft, X, Plus, Save, Eye, Star, Trash2 } from 'lucide-react';
 import { personaApi } from '@/lib/api';
 
-export default function NewPersonaPage() {
+interface PersonaData {
+  id: number;
+  name: string;
+  company_name: string | null;
+  company_description: string | null;
+  products: string[] | null;
+  salesperson_name: string | null;
+  salesperson_title: string | null;
+  tone: string | null;
+  greeting_rules: { text?: string } | null;
+  conversation_rules: { text?: string } | null;
+  system_prompt: string | null;
+  is_default: boolean;
+}
+
+export default function PersonaDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
 
   // Company
   const [companyName, setCompanyName] = useState('');
@@ -18,7 +34,6 @@ export default function NewPersonaPage() {
   // Salesperson
   const [salesName, setSalesName] = useState('');
   const [salesTitle, setSalesTitle] = useState('');
-  const [salesPersonality, setSalesPersonality] = useState('');
 
   // Style
   const [tone, setTone] = useState('professional');
@@ -26,9 +41,32 @@ export default function NewPersonaPage() {
   const [conversationRules, setConversationRules] = useState('');
 
   const [personaName, setPersonaName] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    personaApi.get(params.id)
+      .then(res => {
+        const p: PersonaData = res.data;
+        setPersonaName(p.name);
+        setCompanyName(p.company_name || '');
+        setCompanyDesc(p.company_description || '');
+        setProducts(Array.isArray(p.products) ? p.products : []);
+        setSalesName(p.salesperson_name || '');
+        setSalesTitle(p.salesperson_title || '');
+        setTone(p.tone || 'professional');
+        setGreetingRules(p.greeting_rules?.text || '');
+        setConversationRules(p.conversation_rules?.text || '');
+        setIsDefault(p.is_default);
+      })
+      .catch(err => {
+        console.error('Failed to load persona:', err);
+        setError('人设不存在');
+      })
+      .finally(() => setLoading(false));
+  }, [params.id]);
 
   const addProduct = () => {
     if (productInput.trim() && !products.includes(productInput.trim())) {
@@ -54,8 +92,7 @@ export default function NewPersonaPage() {
 公司简介：${companyDesc || '[公司描述]'}
 主要产品/服务：${products.length > 0 ? products.join('、') : '[产品列表]'}
 
-你的性格特点：${salesPersonality || '[性格描述]'}
-沟通风格：${tone === 'professional' ? '专业正式' : tone === 'friendly' ? '友好亲切' : '轻松随意'}
+沟通风格：${tone === 'professional' ? '专业正式' : tone === 'friendly' ? '友好亲切' : tone === 'professional_friendly' ? '专业友好' : '轻松随意'}
 
 打招呼规则：
 ${greetingRules || '[打招呼规则]'}
@@ -68,7 +105,7 @@ ${conversationRules || '[对话规则]'}`;
     setIsSubmitting(true);
     setError('');
     try {
-      await personaApi.create({
+      await personaApi.update(params.id, {
         name: personaName,
         company_name: companyName || null,
         company_description: companyDesc || null,
@@ -79,16 +116,43 @@ ${conversationRules || '[对话规则]'}`;
         greeting_rules: greetingRules ? { text: greetingRules } : null,
         conversation_rules: conversationRules ? { text: conversationRules } : null,
         system_prompt: generatePreview(),
-        is_default: false,
+        is_default: isDefault,
       });
       router.push('/personas');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '创建失败，请重试';
+      const message = err instanceof Error ? err.message : '保存失败，请重试';
       setError(message);
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (!confirm('确定删除该人设？此操作不可撤销。')) return;
+    try {
+      await personaApi.delete(params.id);
+      router.push('/personas');
+    } catch (err) {
+      console.error('Failed to delete persona:', err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <p className="text-sm text-[#86868b]">加载中...</p>
+      </div>
+    );
+  }
+
+  if (error && !personaName) {
+    return (
+      <div className="text-center py-24">
+        <p className="text-sm text-[#86868b]">{error}</p>
+        <Link href="/personas" className="mt-4 inline-block text-sm text-[#0071e3] hover:underline">返回人设列表</Link>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -97,8 +161,19 @@ ${conversationRules || '[对话规则]'}`;
           <ArrowLeft className="h-4 w-4" />
           返回人设列表
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">创建新人设</h1>
-        <p className="mt-1 text-sm text-[#86868b]">配置 AI 销售代表的身份、公司信息和对话风格</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">编辑人设</h1>
+            <p className="mt-1 text-sm text-[#86868b]">修改 AI 销售代表的配置</p>
+          </div>
+          <button
+            onClick={handleDelete}
+            className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100"
+          >
+            <Trash2 className="h-4 w-4" />
+            删除
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -108,7 +183,7 @@ ${conversationRules || '[对话规则]'}`;
       )}
 
       <div className="space-y-6">
-        {/* Persona Name */}
+        {/* Persona Name + Default */}
         <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-[#1d1d1f]">人设名称</h2>
           <input
@@ -118,6 +193,16 @@ ${conversationRules || '[对话规则]'}`;
             placeholder="例如：专业商务顾问"
             className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
           />
+          <label className="mt-3 inline-flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isDefault}
+              onChange={(e) => setIsDefault(e.target.checked)}
+              className="h-4 w-4 rounded border-[#e5e5e7] text-[#0071e3] focus:ring-[#0071e3]"
+            />
+            <Star className="h-4 w-4 text-amber-500" />
+            <span className="text-sm text-[#1d1d1f]">设为默认人设</span>
+          </label>
         </div>
 
         {/* Company Info */}
@@ -181,36 +266,24 @@ ${conversationRules || '[对话规则]'}`;
         {/* Salesperson Info */}
         <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-[#1d1d1f]">销售代表信息</h2>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">姓名</label>
-                <input
-                  type="text"
-                  value={salesName}
-                  onChange={(e) => setSalesName(e.target.value)}
-                  placeholder="例如：张伟"
-                  className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">职位</label>
-                <input
-                  type="text"
-                  value={salesTitle}
-                  onChange={(e) => setSalesTitle(e.target.value)}
-                  placeholder="例如：商务经理"
-                  className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-                />
-              </div>
-            </div>
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">性格特点</label>
+              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">姓名</label>
               <input
                 type="text"
-                value={salesPersonality}
-                onChange={(e) => setSalesPersonality(e.target.value)}
-                placeholder="例如：热情、专业、善于倾听"
+                value={salesName}
+                onChange={(e) => setSalesName(e.target.value)}
+                placeholder="例如：张伟"
+                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">职位</label>
+              <input
+                type="text"
+                value={salesTitle}
+                onChange={(e) => setSalesTitle(e.target.value)}
+                placeholder="例如：商务经理"
                 className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
               />
             </div>
@@ -239,7 +312,7 @@ ${conversationRules || '[对话规则]'}`;
               <textarea
                 value={greetingRules}
                 onChange={(e) => setGreetingRules(e.target.value)}
-                placeholder="定义 AI 如何开始对话，例如：先赞美对方的成就，然后自然引出合作意向..."
+                placeholder="定义 AI 如何开始对话..."
                 rows={3}
                 className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
               />
@@ -249,7 +322,7 @@ ${conversationRules || '[对话规则]'}`;
               <textarea
                 value={conversationRules}
                 onChange={(e) => setConversationRules(e.target.value)}
-                placeholder="定义后续对话的规则，例如：不要过于推销，注重建立关系，适时询问需求..."
+                placeholder="定义后续对话的规则..."
                 rows={3}
                 className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
               />
@@ -292,7 +365,7 @@ ${conversationRules || '[对话规则]'}`;
             className="inline-flex items-center gap-2 rounded-full bg-[#0071e3] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0077ed] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="h-4 w-4" />
-            {isSubmitting ? '保存中...' : '保存人设'}
+            {isSubmitting ? '保存中...' : '保存修改'}
           </button>
         </div>
       </div>

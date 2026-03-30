@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Megaphone,
@@ -9,6 +9,7 @@ import {
   UserCircle,
   Settings,
   Zap,
+  LogOut,
 } from 'lucide-react';
 
 const navItems = [
@@ -21,6 +22,12 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    router.push('/');
+  };
 
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-16 flex-col bg-[#1a1a2e] transition-all duration-200 lg:w-56">
@@ -56,8 +63,15 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom */}
-      <div className="border-t border-white/5 p-4">
-        <div className="hidden items-center gap-2 lg:flex">
+      <div className="border-t border-white/5 p-2">
+        <button
+          onClick={handleLogout}
+          className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-white/50 transition-all duration-150 hover:bg-white/5 hover:text-white/80"
+        >
+          <LogOut className="h-5 w-5 flex-shrink-0 text-white/50 group-hover:text-white/80" />
+          <span className="hidden lg:block">退出登录</span>
+        </button>
+        <div className="mt-2 hidden items-center gap-2 px-3 lg:flex">
           <div className="h-2 w-2 rounded-full bg-emerald-400" />
           <span className="text-xs text-white/40">系统运行中</span>
         </div>

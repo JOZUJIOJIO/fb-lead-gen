@@ -2,36 +2,51 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Star, Building2, User, Palette } from 'lucide-react';
+import { Plus, Star, Building2, User, Palette, Trash2 } from 'lucide-react';
+import { personaApi } from '@/lib/api';
 
 interface Persona {
-  id: string;
+  id: number;
   name: string;
-  company: string;
-  salesperson_name: string;
-  tone: string;
+  company_name: string | null;
+  salesperson_name: string | null;
+  tone: string | null;
   is_default: boolean;
 }
 
-const mockPersonas: Persona[] = [
-  { id: '1', name: '专业商务顾问', company: 'TechBridge', salesperson_name: '张伟', tone: 'professional', is_default: true },
-  { id: '2', name: '友好销售代表', company: 'LeadFlow', salesperson_name: '李明', tone: 'friendly', is_default: false },
-  { id: '3', name: '行业专家', company: 'AI Solutions', salesperson_name: 'Alex Chen', tone: 'casual', is_default: false },
-];
-
 const toneLabels: Record<string, string> = {
   professional: '专业正式',
+  professional_friendly: '专业友好',
   friendly: '友好亲切',
   casual: '轻松随意',
 };
 
 export default function PersonasPage() {
-  const [personas, setPersonas] = useState<Persona[]>(mockPersonas);
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPersonas = () => {
+    personaApi.list()
+      .then(res => setPersonas(res.data))
+      .catch(err => console.error('Failed to load personas:', err))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    // TODO: Fetch real data
-    // personaApi.list().then(res => setPersonas(res.data));
+    fetchPersonas();
   }, []);
+
+  const handleDelete = async (e: React.MouseEvent, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm('确定删除该人设？')) return;
+    try {
+      await personaApi.delete(String(id));
+      setPersonas(personas.filter(p => p.id !== id));
+    } catch (err) {
+      console.error('Failed to delete persona:', err);
+    }
+  };
 
   return (
     <div>
@@ -49,6 +64,18 @@ export default function PersonasPage() {
         </Link>
       </div>
 
+      {loading && (
+        <div className="py-12 text-center text-sm text-[#86868b]">加载中...</div>
+      )}
+
+      {!loading && personas.length === 0 && (
+        <div className="rounded-2xl bg-white p-12 border border-[#e5e5e7]/60 shadow-sm text-center">
+          <User className="mx-auto h-12 w-12 text-[#86868b]/40" />
+          <h2 className="mt-4 text-lg font-semibold text-[#1d1d1f]">创建你的第一个 AI 人设</h2>
+          <p className="mt-2 text-sm text-[#86868b]">人设定义了 AI 如何与潜在客户沟通</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {personas.map((persona) => (
           <Link
@@ -64,22 +91,30 @@ export default function PersonasPage() {
                 默认
               </div>
             )}
-            <h3 className="mb-4 text-base font-semibold text-[#1d1d1f] group-hover:text-[#0071e3] transition-colors">
-              {persona.name}
-            </h3>
+            <div className="flex items-start justify-between">
+              <h3 className="mb-4 text-base font-semibold text-[#1d1d1f] group-hover:text-[#0071e3] transition-colors">
+                {persona.name}
+              </h3>
+              <button
+                onClick={(e) => handleDelete(e, persona.id)}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-[#86868b] hover:text-red-500 hover:bg-red-50 transition-all"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
             <div className="space-y-2.5">
               <div className="flex items-center gap-2">
                 <Building2 className="h-4 w-4 text-[#86868b]" />
-                <span className="text-sm text-[#86868b]">{persona.company}</span>
+                <span className="text-sm text-[#86868b]">{persona.company_name || '-'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <User className="h-4 w-4 text-[#86868b]" />
-                <span className="text-sm text-[#86868b]">{persona.salesperson_name}</span>
+                <span className="text-sm text-[#86868b]">{persona.salesperson_name || '-'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Palette className="h-4 w-4 text-[#86868b]" />
                 <span className="inline-flex rounded-full bg-[#f5f5f7] px-2.5 py-0.5 text-xs font-medium text-[#86868b]">
-                  {toneLabels[persona.tone] || persona.tone}
+                  {toneLabels[persona.tone || ''] || persona.tone || '-'}
                 </span>
               </div>
             </div>

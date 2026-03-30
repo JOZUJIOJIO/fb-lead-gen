@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Facebook, Twitter, Instagram, Search, UserCircle, Send } from 'lucide-react';
 import Link from 'next/link';
+import { campaignApi, personaApi } from '@/lib/api';
 
 const platforms = [
   { id: 'facebook', name: 'Facebook', icon: Facebook, enabled: true },
@@ -11,11 +12,11 @@ const platforms = [
   { id: 'instagram', name: 'Instagram', icon: Instagram, enabled: false, tag: '即将支持' },
 ];
 
-const mockPersonas = [
-  { id: '1', name: '专业商务顾问', company: 'TechBridge' },
-  { id: '2', name: '友好销售代表', company: 'LeadFlow' },
-  { id: '3', name: '行业专家', company: 'AI Solutions' },
-];
+interface PersonaOption {
+  id: number;
+  name: string;
+  company_name: string | null;
+}
 
 export default function NewCampaignPage() {
   const router = useRouter();
@@ -27,16 +28,32 @@ export default function NewCampaignPage() {
   const [sendLimit, setSendLimit] = useState(20);
   const [campaignName, setCampaignName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [personas, setPersonas] = useState<PersonaOption[]>([]);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    personaApi.list()
+      .then(res => setPersonas(res.data))
+      .catch(err => console.error('Failed to load personas:', err));
+  }, []);
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
+    setError('');
     try {
-      // TODO: Call API
-      // await campaignApi.create({ name: campaignName, platform, keywords, region, industry, persona_id: personaId, send_limit: sendLimit });
-      console.log('Creating campaign:', { campaignName, platform, keywords, region, industry, personaId, sendLimit });
+      await campaignApi.create({
+        name: campaignName,
+        platform,
+        search_keywords: keywords,
+        search_region: region,
+        search_industry: industry,
+        persona_id: personaId ? Number(personaId) : null,
+        send_limit: sendLimit,
+      });
       router.push('/campaigns');
-    } catch (error) {
-      console.error('Failed to create campaign:', error);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '创建失败，请重试';
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -52,6 +69,12 @@ export default function NewCampaignPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">新建获客任务</h1>
         <p className="mt-1 text-sm text-[#86868b]">配置并启动新的自动获客任务</p>
       </div>
+
+      {error && (
+        <div className="mb-6 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <div className="space-y-6">
         {/* Task Name */}
@@ -169,9 +192,9 @@ export default function NewCampaignPage() {
                 className="flex-1 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
               >
                 <option value="">选择人设...</option>
-                {mockPersonas.map((p) => (
+                {personas.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} - {p.company}
+                    {p.name}{p.company_name ? ` - ${p.company_name}` : ''}
                   </option>
                 ))}
               </select>
@@ -212,11 +235,11 @@ export default function NewCampaignPage() {
           </Link>
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting || !campaignName}
+            disabled={isSubmitting || !campaignName || !keywords}
             className="inline-flex items-center gap-2 rounded-full bg-[#0071e3] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0077ed] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="h-4 w-4" />
-            {isSubmitting ? '启动中...' : '启动任务'}
+            {isSubmitting ? '创建中...' : '创建任务'}
           </button>
         </div>
       </div>

@@ -1,9 +1,35 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Pause, Play, Square, Clock } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
+import { campaignApi } from '@/lib/api';
+
+interface LeadBrief {
+  id: number;
+  name: string | null;
+  status: string;
+  profile_url: string | null;
+  created_at: string;
+}
+
+interface CampaignDetail {
+  id: number;
+  name: string | null;
+  platform: string;
+  status: string;
+  search_keywords: string | null;
+  search_region: string | null;
+  search_industry: string | null;
+  persona_id: number | null;
+  send_limit: number;
+  progress_current: number;
+  progress_total: number;
+  created_at: string;
+  updated_at: string;
+  leads: LeadBrief[];
+}
 
 interface LogEntry {
   timestamp: string;
@@ -11,91 +37,93 @@ interface LogEntry {
   message: string;
 }
 
-interface Lead {
-  id: string;
-  name: string;
-  status: string;
-  message_preview: string;
-  timestamp: string;
-}
-
-const mockCampaign = {
-  id: '1',
-  name: 'Facebook 外贸客户开发',
-  platform: 'Facebook',
-  status: 'running',
-  keywords: '外贸, B2B, 供应商',
-  region: '东南亚',
-  persona: '专业商务顾问',
-  sent: 145,
-  limit: 200,
-  created_at: '2024-03-15 10:30',
-};
-
-const mockLogs: LogEntry[] = [
-  { timestamp: '10:45:32', level: 'info', message: '搜索中... 找到 15 个潜在目标' },
-  { timestamp: '10:45:35', level: 'info', message: '正在分析用户 John Smith 的资料...' },
-  { timestamp: '10:45:38', level: 'success', message: '已向 John Smith 发送个性化消息' },
-  { timestamp: '10:45:42', level: 'info', message: '正在分析用户 Sarah Lee 的资料...' },
-  { timestamp: '10:45:45', level: 'success', message: '已向 Sarah Lee 发送个性化消息' },
-  { timestamp: '10:45:50', level: 'warn', message: '用户 Mike Chen 主页为私密，跳过' },
-  { timestamp: '10:45:55', level: 'info', message: '正在分析用户 Emma Wilson 的资料...' },
-];
-
-const mockLeads: Lead[] = [
-  { id: '1', name: 'John Smith', status: 'replied', message_preview: 'Hi John, I noticed your work in...', timestamp: '2024-03-15 10:45' },
-  { id: '2', name: 'Sarah Lee', status: 'sent', message_preview: 'Hello Sarah, your expertise in...', timestamp: '2024-03-15 10:46' },
-  { id: '3', name: 'Emma Wilson', status: 'interested', message_preview: 'Hi Emma, I came across your...', timestamp: '2024-03-15 10:47' },
-  { id: '4', name: 'David Chen', status: 'sent', message_preview: 'Hello David, as a fellow...', timestamp: '2024-03-15 10:48' },
-  { id: '5', name: 'Lisa Wang', status: 'not_interested', message_preview: 'Hi Lisa, I saw your recent post...', timestamp: '2024-03-15 10:49' },
-];
-
 export default function CampaignDetailPage({ params }: { params: { id: string } }) {
-  const [campaign, setCampaign] = useState(mockCampaign);
-  const [logs, setLogs] = useState<LogEntry[]>(mockLogs);
-  const [leads, setLeads] = useState<Lead[]>(mockLeads);
+  const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // TODO: Fetch campaign data
-    // campaignApi.get(params.id).then(res => setCampaign(res.data));
+  const fetchCampaign = useCallback(async () => {
+    try {
+      const res = await campaignApi.get(params.id);
+      setCampaign(res.data);
+    } catch (error) {
+      console.error('Failed to load campaign:', error);
+    } finally {
+      setLoading(false);
+    }
   }, [params.id]);
 
-  // Poll logs when running
   useEffect(() => {
-    if (campaign.status !== 'running') return;
+    fetchCampaign();
+  }, [fetchCampaign]);
+
+  // Poll campaign data when running
+  useEffect(() => {
+    if (!campaign || campaign.status !== 'running') return;
 
     const interval = setInterval(() => {
-      // TODO: Poll real logs
-      // campaignApi.logs(params.id).then(res => setLogs(res.data));
-    }, 3000);
+      fetchCampaign();
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [campaign.status, params.id]);
+  }, [campaign?.status, fetchCampaign]);
 
   // Auto-scroll logs
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [logs]);
+  }, [campaign?.leads]);
 
   const handlePause = async () => {
-    // TODO: campaignApi.pause(params.id)
-    setCampaign({ ...campaign, status: 'paused' });
+    if (!campaign) return;
+    try {
+      await campaignApi.pause(String(campaign.id));
+      setCampaign({ ...campaign, status: 'paused' });
+    } catch (error) {
+      console.error('Failed to pause campaign:', error);
+    }
   };
 
   const handleResume = async () => {
-    // TODO: campaignApi.resume(params.id)
-    setCampaign({ ...campaign, status: 'running' });
+    if (!campaign) return;
+    try {
+      await campaignApi.start(String(campaign.id));
+      setCampaign({ ...campaign, status: 'running' });
+    } catch (error) {
+      console.error('Failed to resume campaign:', error);
+    }
   };
 
   const handleStop = async () => {
-    // TODO: campaignApi.stop(params.id)
-    setCampaign({ ...campaign, status: 'completed' });
+    if (!campaign) return;
+    try {
+      await campaignApi.stop(String(campaign.id));
+      setCampaign({ ...campaign, status: 'failed' });
+    } catch (error) {
+      console.error('Failed to stop campaign:', error);
+    }
   };
 
-  const progress = (campaign.sent / campaign.limit) * 100;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <p className="text-sm text-[#86868b]">加载中...</p>
+      </div>
+    );
+  }
+
+  if (!campaign) {
+    return (
+      <div className="text-center py-24">
+        <p className="text-sm text-[#86868b]">任务不存在</p>
+        <Link href="/campaigns" className="mt-4 inline-block text-sm text-[#0071e3] hover:underline">返回任务列表</Link>
+      </div>
+    );
+  }
+
+  const progress = campaign.send_limit > 0 ? (campaign.progress_current / campaign.send_limit) * 100 : 0;
 
   const logLevelColor = (level: string) => {
     switch (level) {
@@ -116,12 +144,20 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">{campaign.name}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">
+                {campaign.name || campaign.search_keywords || '未命名任务'}
+              </h1>
               <StatusBadge status={campaign.status} size="md" />
             </div>
-            <p className="mt-1 text-sm text-[#86868b]">创建于 {campaign.created_at}</p>
+            <p className="mt-1 text-sm text-[#86868b]">创建于 {new Date(campaign.created_at).toLocaleString('zh-CN')}</p>
           </div>
           <div className="flex items-center gap-2">
+            {campaign.status === 'draft' && (
+              <button onClick={handleResume} className="inline-flex items-center gap-1.5 rounded-full bg-[#0071e3] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0077ed]">
+                <Play className="h-4 w-4" />
+                启动
+              </button>
+            )}
             {campaign.status === 'running' && (
               <button onClick={handlePause} className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100">
                 <Pause className="h-4 w-4" />
@@ -148,19 +184,19 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
           <p className="text-xs text-[#86868b]">平台</p>
-          <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.platform}</p>
+          <p className="mt-1 text-sm font-medium text-[#1d1d1f] capitalize">{campaign.platform}</p>
         </div>
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
           <p className="text-xs text-[#86868b]">关键词</p>
-          <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.keywords}</p>
+          <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.search_keywords || '-'}</p>
         </div>
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
           <p className="text-xs text-[#86868b]">地区</p>
-          <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.region}</p>
+          <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.search_region || '全部'}</p>
         </div>
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
-          <p className="text-xs text-[#86868b]">人设</p>
-          <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.persona}</p>
+          <p className="text-xs text-[#86868b]">行业</p>
+          <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.search_industry || '全部'}</p>
         </div>
       </div>
 
@@ -168,7 +204,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
       <div className="mb-6 rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <span className="text-sm font-medium text-[#1d1d1f]">发送进度</span>
-          <span className="text-sm text-[#86868b]">{campaign.sent} / {campaign.limit}</span>
+          <span className="text-sm text-[#86868b]">{campaign.progress_current} / {campaign.send_limit}</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-[#f0f0f2]">
           <div
@@ -178,53 +214,33 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
         </div>
       </div>
 
-      {/* Real-time Logs */}
-      <div className="mb-6 rounded-2xl bg-white border border-[#e5e5e7]/60 shadow-sm overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-[#e5e5e7]/60 px-6 py-3.5">
-          <Clock className="h-4 w-4 text-[#86868b]" />
-          <h2 className="text-sm font-semibold text-[#1d1d1f]">实时日志</h2>
-          {campaign.status === 'running' && (
-            <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse-dot" />
-              实时更新中
-            </span>
-          )}
-        </div>
-        <div ref={logContainerRef} className="h-48 overflow-y-auto bg-[#fafafa] p-4 font-mono text-xs">
-          {logs.map((log, i) => (
-            <div key={i} className="py-0.5">
-              <span className="text-[#86868b]">[{log.timestamp}]</span>{' '}
-              <span className={logLevelColor(log.level)}>{log.message}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Leads Table */}
       <div className="rounded-2xl bg-white border border-[#e5e5e7]/60 shadow-sm overflow-hidden">
         <div className="border-b border-[#e5e5e7]/60 px-6 py-3.5">
-          <h2 className="text-sm font-semibold text-[#1d1d1f]">获取的线索</h2>
+          <h2 className="text-sm font-semibold text-[#1d1d1f]">获取的线索 ({campaign.leads.length})</h2>
         </div>
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-[#e5e5e7]/40">
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">姓名</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">状态</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">消息预览</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">时间</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#e5e5e7]/40">
-            {leads.map((lead) => (
-              <tr key={lead.id} className="transition-colors hover:bg-[#f5f5f7]/50">
-                <td className="px-6 py-3.5 text-sm font-medium text-[#1d1d1f]">{lead.name}</td>
-                <td className="px-6 py-3.5"><StatusBadge status={lead.status} /></td>
-                <td className="max-w-xs truncate px-6 py-3.5 text-sm text-[#86868b]">{lead.message_preview}</td>
-                <td className="px-6 py-3.5 text-sm text-[#86868b]">{lead.timestamp}</td>
+        {campaign.leads.length > 0 ? (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#e5e5e7]/40">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">姓名</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">状态</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">时间</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-[#e5e5e7]/40">
+              {campaign.leads.map((lead) => (
+                <tr key={lead.id} className="transition-colors hover:bg-[#f5f5f7]/50">
+                  <td className="px-6 py-3.5 text-sm font-medium text-[#1d1d1f]">{lead.name || '未知'}</td>
+                  <td className="px-6 py-3.5"><StatusBadge status={lead.status} /></td>
+                  <td className="px-6 py-3.5 text-sm text-[#86868b]">{new Date(lead.created_at).toLocaleString('zh-CN')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="py-12 text-center text-sm text-[#86868b]">暂无线索数据</div>
+        )}
       </div>
     </div>
   );

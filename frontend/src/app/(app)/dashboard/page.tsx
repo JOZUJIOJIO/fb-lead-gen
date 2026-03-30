@@ -4,35 +4,31 @@ import { useEffect, useState } from 'react';
 import { Send, MessageSquare, Zap, Users } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import StatsCard from '@/components/StatsCard';
+import { campaignApi } from '@/lib/api';
 
-const mockStats = {
-  sentToday: 48,
-  replyRate: '12.5%',
-  activeCampaigns: 3,
-  totalLeads: 1247,
-};
-
-const mockChartData = [
-  { day: '周一', sent: 32, replied: 4 },
-  { day: '周二', sent: 45, replied: 6 },
-  { day: '周三', sent: 28, replied: 3 },
-  { day: '周四', sent: 51, replied: 8 },
-  { day: '周五', sent: 38, replied: 5 },
-  { day: '周六', sent: 15, replied: 2 },
-  { day: '周日', sent: 48, replied: 6 },
-];
+interface Stats {
+  total_messages: number;
+  total_leads: number;
+  active_campaigns: number;
+  total_campaigns: number;
+}
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState(mockStats);
-  const [chartData, setChartData] = useState(mockChartData);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch real data from API
-    // const fetchStats = async () => {
-    //   const res = await api.get('/api/dashboard/stats');
-    //   setStats(res.data);
-    // };
-    // fetchStats();
+    const fetchStats = async () => {
+      try {
+        const res = await campaignApi.stats();
+        setStats(res.data);
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
   }, []);
 
   return (
@@ -46,62 +42,34 @@ export default function DashboardPage() {
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatsCard
           icon={Send}
-          label="今日发送量"
-          value={stats.sentToday}
-          trend={{ value: '12%', positive: true }}
-        />
-        <StatsCard
-          icon={MessageSquare}
-          label="回复率"
-          value={stats.replyRate}
-          trend={{ value: '2.3%', positive: true }}
-        />
-        <StatsCard
-          icon={Zap}
-          label="活跃任务"
-          value={stats.activeCampaigns}
+          label="总发送消息"
+          value={loading ? '...' : (stats?.total_messages ?? 0)}
         />
         <StatsCard
           icon={Users}
           label="总线索数"
-          value={stats.totalLeads.toLocaleString()}
-          trend={{ value: '48', positive: true }}
+          value={loading ? '...' : (stats?.total_leads ?? 0).toLocaleString()}
+        />
+        <StatsCard
+          icon={Zap}
+          label="活跃任务"
+          value={loading ? '...' : (stats?.active_campaigns ?? 0)}
+        />
+        <StatsCard
+          icon={MessageSquare}
+          label="总任务数"
+          value={loading ? '...' : (stats?.total_campaigns ?? 0)}
         />
       </div>
 
-      {/* Chart */}
-      <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
-        <h2 className="mb-6 text-base font-semibold text-[#1d1d1f]">近 7 日活动</h2>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} barGap={4}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f2" vertical={false} />
-              <XAxis
-                dataKey="day"
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#86868b', fontSize: 12 }}
-              />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#86868b', fontSize: 12 }}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #e5e5e7',
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                  fontSize: '13px',
-                }}
-              />
-              <Bar dataKey="sent" name="发送" fill="#0071e3" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="replied" name="回复" fill="#34c759" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Empty state when no data */}
+      {!loading && stats && stats.total_campaigns === 0 && (
+        <div className="rounded-2xl bg-white p-12 border border-[#e5e5e7]/60 shadow-sm text-center">
+          <Zap className="mx-auto h-12 w-12 text-[#86868b]/40" />
+          <h2 className="mt-4 text-lg font-semibold text-[#1d1d1f]">开始你的第一个获客任务</h2>
+          <p className="mt-2 text-sm text-[#86868b]">前往「任务」页面创建新的获客任务，数据将在此实时展示</p>
         </div>
-      </div>
+      )}
     </div>
   );
 }

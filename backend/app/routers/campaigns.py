@@ -26,6 +26,7 @@ _running_tasks: dict[int, asyncio.Task] = {}
 # ---------- Schemas ----------
 
 class CampaignCreate(BaseModel):
+    name: str = ""
     platform: str = "facebook"
     search_keywords: str
     search_region: str = ""
@@ -36,6 +37,7 @@ class CampaignCreate(BaseModel):
 
 class CampaignResponse(BaseModel):
     id: int
+    name: Optional[str]
     platform: str
     search_keywords: Optional[str]
     search_region: Optional[str]
@@ -76,6 +78,7 @@ async def create_campaign(
     user: User = Depends(get_current_user),
 ):
     campaign = Campaign(
+        name=body.name or body.search_keywords,
         platform=PlatformEnum(body.platform),
         search_keywords=body.search_keywords,
         search_region=body.search_region,
@@ -151,6 +154,7 @@ async def get_campaign(
     ]
     return CampaignDetail(
         id=campaign.id,
+        name=campaign.name,
         platform=campaign.platform.value,
         search_keywords=campaign.search_keywords,
         search_region=campaign.search_region,
