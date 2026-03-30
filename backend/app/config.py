@@ -17,12 +17,13 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://redis:6379/0"
 
-    # AI Provider: openai | anthropic | kimi
+    # AI Provider: openai | anthropic | kimi | openrouter
     AI_PROVIDER: str = "openai"
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_BASE_URL: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     KIMI_API_KEY: Optional[str] = None
+    OPENROUTER_API_KEY: Optional[str] = None
 
     # Browser proxy
     PROXY_SERVER: Optional[str] = None

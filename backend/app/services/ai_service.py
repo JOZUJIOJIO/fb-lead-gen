@@ -169,6 +169,8 @@ def _get_provider_config() -> tuple[str, str, str]:
         return "kimi", "https://api.moonshot.cn/v1", settings.KIMI_API_KEY or ""
     elif provider == "anthropic":
         return "anthropic", "", settings.ANTHROPIC_API_KEY or ""
+    elif provider == "openrouter":
+        return "openrouter", "https://openrouter.ai/api/v1", settings.OPENROUTER_API_KEY or ""
     else:
         # openai or any openai-compatible
         base = settings.OPENAI_BASE_URL or "https://api.openai.com/v1"
@@ -180,6 +182,8 @@ def _default_model(provider: str) -> str:
         return "claude-sonnet-4-20250514"
     elif provider == "kimi":
         return "moonshot-v1-8k"
+    elif provider == "openrouter":
+        return "openai/gpt-5.4"
     return "gpt-4o-mini"
 
 

@@ -62,6 +62,7 @@ export default function SettingsPage() {
         if (aiProvider === 'openai') payload.openai_api_key = apiKey;
         else if (aiProvider === 'anthropic') payload.anthropic_api_key = apiKey;
         else if (aiProvider === 'kimi') payload.kimi_api_key = apiKey;
+        else if (aiProvider === 'openrouter') payload.openrouter_api_key = apiKey;
       }
       if (apiBaseUrl) payload.openai_base_url = apiBaseUrl;
       await settingsApi.update(payload);
@@ -178,6 +179,7 @@ export default function SettingsPage() {
           <h2 className="mb-4 text-base font-semibold text-[#1d1d1f]">AI 服务提供商</h2>
           <div className="space-y-3">
             {[
+              { id: 'openrouter', name: 'OpenRouter', desc: 'GPT-5.4 / Claude / Gemini 等，一个 Key 用所有模型' },
               { id: 'openai', name: 'OpenAI', desc: 'GPT-4o / GPT-4o-mini，支持兼容 API' },
               { id: 'anthropic', name: 'Anthropic Claude', desc: 'Claude 系列模型' },
               { id: 'kimi', name: 'Kimi / Moonshot', desc: '月之暗面，国内直连' },

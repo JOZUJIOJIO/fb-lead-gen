@@ -26,6 +26,7 @@ class SettingsResponse(BaseModel):
     openai_base_url: Optional[str]
     anthropic_api_key_set: bool
     kimi_api_key_set: bool
+    openrouter_api_key_set: bool
     proxy_server: Optional[str]
     send_interval_min: int
     send_interval_max: int
@@ -38,6 +39,7 @@ class SettingsUpdate(BaseModel):
     openai_base_url: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     kimi_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
     proxy_server: Optional[str] = None
     send_interval_min: Optional[int] = None
     send_interval_max: Optional[int] = None
@@ -56,6 +58,7 @@ async def get_settings(user: User = Depends(get_current_user)):
         openai_base_url=settings.OPENAI_BASE_URL,
         anthropic_api_key_set=bool(settings.ANTHROPIC_API_KEY),
         kimi_api_key_set=bool(settings.KIMI_API_KEY),
+        openrouter_api_key_set=bool(settings.OPENROUTER_API_KEY),
         proxy_server=settings.PROXY_SERVER,
         send_interval_min=settings.SEND_INTERVAL_MIN,
         send_interval_max=settings.SEND_INTERVAL_MAX,
@@ -86,6 +89,9 @@ async def update_settings(
     if body.kimi_api_key is not None:
         settings.KIMI_API_KEY = body.kimi_api_key
         updates["KIMI_API_KEY"] = body.kimi_api_key
+    if body.openrouter_api_key is not None:
+        settings.OPENROUTER_API_KEY = body.openrouter_api_key
+        updates["OPENROUTER_API_KEY"] = body.openrouter_api_key
     if body.proxy_server is not None:
         settings.PROXY_SERVER = body.proxy_server
         updates["PROXY_SERVER"] = body.proxy_server

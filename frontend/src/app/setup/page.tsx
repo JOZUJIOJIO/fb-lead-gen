@@ -6,6 +6,15 @@ import { settingsApi, authApi } from '@/lib/api';
 
 const AI_PROVIDERS = [
   {
+    id: 'openrouter',
+    name: 'OpenRouter（推荐）',
+    description: '一个 Key 调用 GPT-5.4 / Claude / Gemini 等所有模型',
+    keyLabel: 'OpenRouter API Key',
+    keyPlaceholder: 'sk-or-...',
+    keyUrl: 'https://openrouter.ai/keys',
+    hasBaseUrl: false,
+  },
+  {
     id: 'openai',
     name: 'OpenAI',
     description: 'GPT-4o / GPT-4o-mini，也支持任何兼容 API',
@@ -78,6 +87,8 @@ export default function SetupPage() {
         payload.anthropic_api_key = apiKey;
       } else if (selectedProvider === 'kimi') {
         payload.kimi_api_key = apiKey;
+      } else if (selectedProvider === 'openrouter') {
+        payload.openrouter_api_key = apiKey;
       }
       if (proxy) payload.proxy_server = proxy;
 
