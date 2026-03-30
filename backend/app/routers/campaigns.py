@@ -259,6 +259,26 @@ async def start_campaign(
     if campaign.status == CampaignStatus.running:
         raise HTTPException(status_code=400, detail="任务已在运行中")
 
+    # Pre-flight: check if Facebook cookies exist
+    import json
+    from pathlib import Path
+    cookies_file = Path("/tmp/leadflow-browser/facebook_cookies.json")
+    if not cookies_file.exists():
+        raise HTTPException(
+            status_code=400,
+            detail="尚未导入 Facebook Cookies，请先在设置页面导入",
+        )
+    try:
+        cookies = json.loads(cookies_file.read_text())
+        fb_count = sum(1 for c in cookies if ".facebook.com" in c.get("domain", ""))
+        if fb_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cookies 中没有 Facebook 相关数据，请重新导入",
+            )
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Cookies 文件损坏，请重新导入")
+
     # Launch as background asyncio task
     task = asyncio.create_task(run_campaign(campaign_id))
     _running_tasks[campaign_id] = task

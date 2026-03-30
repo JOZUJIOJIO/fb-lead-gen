@@ -3,10 +3,10 @@
 import asyncio
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.platforms.facebook import FacebookAdapter
@@ -54,16 +54,13 @@ async def _wait_for_send_window(campaign: "Campaign") -> None:
         start, end = campaign.send_hour_start, campaign.send_hour_end
 
         if start <= end:
-            # Normal window e.g. 9-18
             in_window = start <= hour < end
         else:
-            # Overnight window e.g. 22-6
             in_window = hour >= start or hour < end
 
         if in_window:
             return
 
-        # Calculate seconds until window opens
         if start <= end:
             target_hour = start
         else:
@@ -77,22 +74,67 @@ async def _wait_for_send_window(campaign: "Campaign") -> None:
             "Campaign %d: outside send window (%02d:00-%02d:00 %s), current=%02d:%02d, waiting %d min",
             campaign.id, start, end, campaign.timezone, hour, now.minute, wait_minutes,
         )
-        await asyncio.sleep(min(wait_minutes * 60, 300))  # Re-check every 5 min max
+        await asyncio.sleep(min(wait_minutes * 60, 300))
 
 
 async def _is_already_contacted(session: AsyncSession, platform_user_id: str, platform: str) -> bool:
     """Check if this person has already been contacted in ANY campaign."""
     if not platform_user_id:
         return False
-    from app.models import PlatformEnum as PE
     result = await session.execute(
         select(Lead.id).where(
             Lead.platform_user_id == platform_user_id,
-            Lead.platform == PE(platform),
+            Lead.platform == PlatformEnum(platform),
             Lead.status != LeadStatus.failed,
         ).limit(1)
     )
     return result.scalar_one_or_none() is not None
+
+
+async def _get_today_sent_count(session: AsyncSession) -> int:
+    """Count messages sent today across ALL campaigns."""
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    result = await session.execute(
+        select(func.count(Message.id)).where(
+            Message.direction == MessageDirection.outbound,
+            Message.created_at >= today_start,
+        )
+    )
+    return result.scalar() or 0
+
+
+async def _wait_for_daily_limit(session: AsyncSession, campaign_id: int) -> None:
+    """If daily limit reached, wait until next day (re-check every 10 min)."""
+    while True:
+        sent_today = await _get_today_sent_count(session)
+        if sent_today < settings.MAX_DAILY_MESSAGES:
+            return
+
+        logger.warning(
+            "Campaign %d: daily limit reached (%d/%d), waiting for next day",
+            campaign_id, sent_today, settings.MAX_DAILY_MESSAGES,
+        )
+        # Sleep 10 minutes, then re-check
+        await asyncio.sleep(600)
+
+
+async def _verify_facebook_login(adapter: FacebookAdapter) -> bool:
+    """Check if Facebook cookies are valid by visiting facebook.com."""
+    try:
+        page = adapter._page
+        if page is None:
+            return False
+        await page.goto("https://www.facebook.com", timeout=20000)
+        await asyncio.sleep(2)
+        title = await page.title()
+        url = page.url
+        # If redirected to login page, cookies are invalid
+        if "login" in url.lower() or "login" in title.lower():
+            return False
+        return True
+    except Exception as e:
+        logger.error("Facebook login verification failed: %s", e)
+        return False
 
 
 async def _refresh_campaign_status(session: AsyncSession, campaign_id: int) -> CampaignStatus:
@@ -104,6 +146,17 @@ async def _refresh_campaign_status(session: AsyncSession, campaign_id: int) -> C
     return row or CampaignStatus.failed
 
 
+async def _get_already_processed_uids(session: AsyncSession, campaign_id: int) -> set[str]:
+    """Get platform_user_ids already processed in this campaign (for resume)."""
+    result = await session.execute(
+        select(Lead.platform_user_id).where(
+            Lead.campaign_id == campaign_id,
+            Lead.platform_user_id.is_not(None),
+        )
+    )
+    return {row for row in result.scalars().all() if row}
+
+
 # ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
@@ -111,7 +164,13 @@ async def _refresh_campaign_status(session: AsyncSession, campaign_id: int) -> C
 async def run_campaign(campaign_id: int) -> None:  # noqa: C901
     """Execute a full campaign: search -> analyze -> message.
 
-    This is designed to be launched as a background asyncio task.
+    Supports:
+    - Resume from interruption (skips already-processed leads)
+    - Global deduplication across campaigns
+    - Daily message limit enforcement
+    - Send time window
+    - Review mode (generate but don't send)
+    - Cookie validation before start
     """
     logger.info("Campaign %d: starting", campaign_id)
 
@@ -125,7 +184,6 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
             logger.error("Campaign %d not found", campaign_id)
             return
 
-        # Eagerly load the persona relationship
         if campaign.persona_id:
             from sqlalchemy.orm import selectinload
             result = await session.execute(
@@ -141,7 +199,7 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
         campaign.status = CampaignStatus.running
         await session.commit()
 
-        # 2. Initialize adapter
+        # 2. Initialize adapter + verify cookies
         adapter = FacebookAdapter()
         try:
             await adapter.initialize()
@@ -150,6 +208,17 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
             campaign.status = CampaignStatus.failed
             await session.commit()
             return
+
+        # 2b. Verify Facebook login
+        login_ok = await _verify_facebook_login(adapter)
+        if not login_ok:
+            logger.error("Campaign %d: Facebook cookies expired or invalid — please re-import cookies", campaign_id)
+            campaign.status = CampaignStatus.failed
+            await session.commit()
+            await adapter.close()
+            return
+
+        logger.info("Campaign %d: Facebook login verified", campaign_id)
 
         try:
             # 3. Search people
@@ -169,10 +238,19 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
             # Cap to send_limit
             targets = search_results[: campaign.send_limit]
             campaign.progress_total = len(targets)
-            campaign.progress_current = 0
+
+            # 3b. Get already-processed UIDs for resume
+            already_processed = await _get_already_processed_uids(session, campaign_id)
+            if already_processed:
+                logger.info(
+                    "Campaign %d: resuming — %d leads already processed",
+                    campaign_id, len(already_processed),
+                )
+
             await session.commit()
 
             # 4. Process each target
+            sent_in_session = 0
             for idx, target in enumerate(targets):
                 # Check if campaign was paused or stopped
                 current_status = await _refresh_campaign_status(session, campaign_id)
@@ -183,12 +261,20 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                 profile_url = target.get("profile_url", "")
                 target_name = target.get("name", "unknown")
                 platform_uid = target.get("platform_user_id", "")
+
+                # 4-pre-a. Resume: skip already processed in THIS campaign
+                if platform_uid and platform_uid in already_processed:
+                    logger.info("Campaign %d: SKIP %s (already processed, resuming)", campaign_id, target_name)
+                    campaign.progress_current = idx + 1
+                    await session.commit()
+                    continue
+
                 logger.info(
                     "Campaign %d: processing %d/%d — %s",
                     campaign_id, idx + 1, len(targets), target_name,
                 )
 
-                # 4a-pre. Global dedup: skip if already contacted in any campaign
+                # 4-pre-b. Global dedup: skip if already contacted in other campaigns
                 if await _is_already_contacted(session, platform_uid, "facebook"):
                     logger.info(
                         "Campaign %d: SKIP %s (already contacted in another campaign)",
@@ -202,7 +288,7 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                 lead = Lead(
                     campaign_id=campaign_id,
                     platform=PlatformEnum.facebook,
-                    platform_user_id=target.get("platform_user_id", ""),
+                    platform_user_id=platform_uid,
                     name=target_name,
                     profile_url=profile_url,
                     status=LeadStatus.found,
@@ -227,7 +313,6 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                         except Exception as e:
                             logger.warning("Campaign %d: AI analysis failed for %s: %s", campaign_id, target_name, e)
 
-                    # Merge adapter data with AI analysis
                     merged_profile = {**profile_data, **ai_analysis}
                     lead.bio = merged_profile.get("bio", "")[:500] if merged_profile.get("bio") else None
                     lead.industry = merged_profile.get("industry", "")[:100] if merged_profile.get("industry") else None
@@ -246,9 +331,12 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                     # 4e-pre. Wait for send window
                     await _wait_for_send_window(campaign)
 
+                    # 4e-pre2. Check daily limit
+                    if not campaign.review_mode:
+                        await _wait_for_daily_limit(session, campaign_id)
+
                     # 4e. Send message (or queue for review)
                     if campaign.review_mode:
-                        # Review mode: save message but don't send
                         lead.status = LeadStatus.pending_review
                         msg = Message(
                             lead_id=lead.id,
@@ -259,7 +347,6 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                         session.add(msg)
                         logger.info("Campaign %d: queued message for review — %s", campaign_id, target_name)
                     else:
-                        # Auto mode: send immediately
                         success = await adapter.send_message(profile_url, greeting)
                         if success:
                             lead.status = LeadStatus.messaged
@@ -270,7 +357,19 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                                 ai_generated=True,
                             )
                             session.add(msg)
+                            sent_in_session += 1
                         else:
+                            # Check if send failure is due to login expiry
+                            login_still_ok = await _verify_facebook_login(adapter)
+                            if not login_still_ok:
+                                logger.error(
+                                    "Campaign %d: Facebook login expired mid-campaign! Pausing.",
+                                    campaign_id,
+                                )
+                                lead.status = LeadStatus.failed
+                                campaign.status = CampaignStatus.paused
+                                await session.commit()
+                                break
                             lead.status = LeadStatus.failed
 
                     await session.commit()
@@ -293,13 +392,16 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                     logger.info("Campaign %d: waiting %ds before next target", campaign_id, wait_secs)
                     await asyncio.sleep(wait_secs)
 
-            # 5. Mark campaign as completed (unless it was paused)
+            # 5. Mark campaign as completed (unless it was paused/stopped)
             final_status = await _refresh_campaign_status(session, campaign_id)
             if final_status == CampaignStatus.running:
                 campaign.status = CampaignStatus.completed
                 await session.commit()
 
-            logger.info("Campaign %d: finished (status=%s)", campaign_id, campaign.status.value)
+            logger.info(
+                "Campaign %d: finished (status=%s, sent_this_session=%d)",
+                campaign_id, campaign.status.value, sent_in_session,
+            )
 
         except Exception as e:
             logger.error("Campaign %d: unhandled error: %s", campaign_id, e)
