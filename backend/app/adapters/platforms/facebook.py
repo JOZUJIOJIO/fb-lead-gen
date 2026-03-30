@@ -1,9 +1,11 @@
 """Facebook platform adapter using Patchright for browser automation."""
 
 import asyncio
+import json as _json
 import logging
 import os
 import random
+import shutil
 import string
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 BROWSER_DATA_DIR = "/tmp/leadflow-browser/facebook"
 SCREENSHOT_DIR = "/tmp/leadflow-browser/screenshots"
 COOKIES_FILE = "/tmp/leadflow-browser/facebook_cookies.json"
+LOCK_FILE = os.path.join(BROWSER_DATA_DIR, "SingletonLock")
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -43,6 +46,18 @@ VIEWPORTS = [
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _clear_browser_locks():
+    """Remove stale lock files that prevent browser from starting."""
+    for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        lock_path = os.path.join(BROWSER_DATA_DIR, lock_name)
+        if os.path.exists(lock_path):
+            try:
+                os.remove(lock_path)
+                logger.info("Removed stale lock file: %s", lock_path)
+            except OSError as e:
+                logger.warning("Failed to remove lock file %s: %s", lock_path, e)
+
 
 async def _random_delay(min_s: float = 2.0, max_s: float = 5.0) -> None:
     """Sleep for a random duration to mimic human behavior."""
@@ -100,8 +115,15 @@ class FacebookAdapter(PlatformAdapter):
     # -- Lifecycle -----------------------------------------------------------
 
     async def initialize(self) -> None:
-        """Launch browser with anti-detection settings and persistent session."""
+        """Launch browser with anti-detection settings and persistent session.
+
+        Handles stale lock files from previous unclean shutdowns and falls back
+        to a fresh profile if persistent context is corrupted.
+        """
         os.makedirs(BROWSER_DATA_DIR, exist_ok=True)
+
+        # Clear stale lock files from previous crashes
+        _clear_browser_locks()
 
         self._playwright = await async_playwright().start()
 
@@ -113,26 +135,49 @@ class FacebookAdapter(PlatformAdapter):
             "--disable-infobars",
             "--no-first-run",
             "--no-default-browser-check",
+            "--no-sandbox",
+            "--disable-gpu",
+            "--disable-dev-shm-usage",
         ]
         if settings.PROXY_SERVER:
             launch_args.append(f"--proxy-server={settings.PROXY_SERVER}")
 
-        # Use persistent context so login state survives across runs
-        self._context = await self._playwright.chromium.launch_persistent_context(
-            user_data_dir=BROWSER_DATA_DIR,
-            headless=False,
-            args=launch_args,
-            viewport=viewport,
-            user_agent=user_agent,
-            locale="zh-CN",
-            timezone_id="Asia/Shanghai",
-            ignore_https_errors=True,
-        )
+        # Detect if running in a headless environment (Docker / Xvfb)
+        display = os.environ.get("DISPLAY", "")
+        headless = not bool(display)
+
+        # Try persistent context; if corrupted, nuke and retry
+        for attempt in range(2):
+            try:
+                self._context = await self._playwright.chromium.launch_persistent_context(
+                    user_data_dir=BROWSER_DATA_DIR,
+                    headless=headless,
+                    args=launch_args,
+                    viewport=viewport,
+                    user_agent=user_agent,
+                    locale="zh-CN",
+                    timezone_id="Asia/Shanghai",
+                    ignore_https_errors=True,
+                )
+                break
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning(
+                        "Persistent context failed (%s), clearing profile and retrying...", e,
+                    )
+                    _clear_browser_locks()
+                    # Nuke the corrupted profile
+                    try:
+                        shutil.rmtree(BROWSER_DATA_DIR, ignore_errors=True)
+                        os.makedirs(BROWSER_DATA_DIR, exist_ok=True)
+                    except Exception:
+                        pass
+                else:
+                    raise
 
         # Load saved cookies if available
         if os.path.exists(COOKIES_FILE):
             try:
-                import json as _json
                 cookies = _json.loads(Path(COOKIES_FILE).read_text())
                 if cookies:
                     await self._context.add_cookies(cookies)
@@ -147,9 +192,8 @@ class FacebookAdapter(PlatformAdapter):
             self._page = await self._context.new_page()
 
         logger.info(
-            "Facebook adapter initialized (viewport=%s, ua=%s...)",
-            viewport,
-            user_agent[:40],
+            "Facebook adapter initialized (headless=%s, viewport=%s, ua=%s...)",
+            headless, viewport, user_agent[:40],
         )
 
     # -- Search --------------------------------------------------------------
@@ -168,7 +212,6 @@ class FacebookAdapter(PlatformAdapter):
         results: list[dict] = []
 
         try:
-            # Build search query
             query_parts = [keywords]
             if region:
                 query_parts.append(region)
@@ -176,18 +219,14 @@ class FacebookAdapter(PlatformAdapter):
                 query_parts.append(industry)
             query = " ".join(query_parts)
 
-            # Navigate to Facebook search
             search_url = f"https://www.facebook.com/search/people/?q={query}"
             await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
             await _random_delay(3, 6)
             await _random_mouse_move(page)
 
-            # Scroll to load more results
             await _human_scroll(page, times=4)
             await _random_delay(2, 4)
 
-            # Extract search results
-            # Facebook search result cards typically live in specific containers
             result_links = await page.query_selector_all(
                 'div[role="article"] a[role="presentation"], '
                 'div[data-pagelet*="SearchResult"] a[href*="/profile.php"], '
@@ -196,12 +235,11 @@ class FacebookAdapter(PlatformAdapter):
 
             seen_urls: set[str] = set()
 
-            for link in result_links[:30]:  # Cap at 30 to avoid over-scraping
+            for link in result_links[:30]:
                 try:
                     href = await link.get_attribute("href") or ""
                     if not href or href in seen_urls:
                         continue
-                    # Only keep profile-like URLs
                     if "/profile.php" not in href and "facebook.com/" not in href:
                         continue
                     if "/search/" in href or "/hashtag/" in href:
@@ -209,19 +247,16 @@ class FacebookAdapter(PlatformAdapter):
 
                     seen_urls.add(href)
 
-                    # Try to extract name from the link or nearby elements
                     name = (await link.inner_text()).strip()
                     if not name:
                         name_el = await link.query_selector("span")
                         if name_el:
                             name = (await name_el.inner_text()).strip()
 
-                    # Extract snippet (bio / mutual friends text) from parent
                     parent = await link.evaluate_handle("el => el.closest('div[role=\"article\"]') || el.parentElement.parentElement")
                     snippet = ""
                     try:
                         snippet_text = await parent.evaluate("el => el.innerText")
-                        # Take text after the name as snippet
                         if name and name in snippet_text:
                             snippet = snippet_text.split(name, 1)[-1].strip()[:200]
                         else:
@@ -229,12 +264,10 @@ class FacebookAdapter(PlatformAdapter):
                     except Exception:
                         pass
 
-                    # Extract platform_user_id from URL
                     platform_user_id = ""
                     if "profile.php?id=" in href:
                         platform_user_id = href.split("id=")[1].split("&")[0]
                     else:
-                        # e.g. https://www.facebook.com/username
                         parts = href.rstrip("/").split("/")
                         platform_user_id = parts[-1] if parts else ""
 
@@ -269,19 +302,16 @@ class FacebookAdapter(PlatformAdapter):
         profile_data: dict = {"profile_url": profile_url, "raw_html": ""}
 
         try:
-            # Navigate to the about page for richer data
             about_url = profile_url.rstrip("/") + "/about"
             await page.goto(about_url, wait_until="domcontentloaded", timeout=30000)
             await _random_delay(3, 5)
             await _random_mouse_move(page)
             await _human_scroll(page, times=2)
 
-            # Extract name
             name_el = await page.query_selector("h1")
             if name_el:
                 profile_data["name"] = (await name_el.inner_text()).strip()
 
-            # Extract intro / bio section
             intro_section = await page.query_selector(
                 'div[data-pagelet="ProfileTileCollection"], '
                 'div[data-pagelet="ProfileAppSection_0"]'
@@ -289,7 +319,6 @@ class FacebookAdapter(PlatformAdapter):
             if intro_section:
                 profile_data["bio"] = (await intro_section.inner_text()).strip()[:500]
 
-            # Extract work and education from about page
             about_items = await page.query_selector_all(
                 'div[data-pagelet*="about"] span, '
                 'div[data-pagelet*="ProfileAppSection"] span'
@@ -314,7 +343,6 @@ class FacebookAdapter(PlatformAdapter):
             profile_data["education"] = "; ".join(edu_texts[:3]) if edu_texts else ""
             profile_data["location"] = location_text
 
-            # Navigate to main profile to get recent posts
             await page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
             await _random_delay(2, 4)
             await _human_scroll(page, times=3)
@@ -327,7 +355,7 @@ class FacebookAdapter(PlatformAdapter):
             for post_el in post_elements[:10]:
                 try:
                     text = (await post_el.inner_text()).strip()
-                    if len(text) > 20:  # Filter out short UI text
+                    if len(text) > 20:
                         recent_posts.append(text[:300])
                         if len(recent_posts) >= 5:
                             break
@@ -335,7 +363,6 @@ class FacebookAdapter(PlatformAdapter):
                     continue
             profile_data["recent_posts"] = recent_posts
 
-            # Capture raw HTML for AI analysis
             profile_data["raw_html"] = await page.content()
 
             logger.info("get_profile: extracted profile for '%s'", profile_data.get("name", "unknown"))
@@ -356,12 +383,10 @@ class FacebookAdapter(PlatformAdapter):
         page = self._page
 
         try:
-            # Navigate to the profile
             await page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
             await _random_delay(3, 5)
             await _random_mouse_move(page)
 
-            # Click the Message button
             message_btn = await page.query_selector(
                 'div[aria-label="Message"], '
                 'div[aria-label="发消息"], '
@@ -378,7 +403,6 @@ class FacebookAdapter(PlatformAdapter):
             await message_btn.click()
             await _random_delay(2, 4)
 
-            # Wait for the message input to appear
             msg_input = await page.wait_for_selector(
                 'div[role="textbox"][contenteditable="true"], '
                 'div[aria-label*="message" i][contenteditable="true"], '
@@ -390,7 +414,6 @@ class FacebookAdapter(PlatformAdapter):
                 await _save_screenshot(page, "no_msg_input")
                 return False
 
-            # Type message with human-like delays
             await msg_input.click()
             await _random_delay(0.5, 1.0)
             for char in message:
@@ -399,7 +422,6 @@ class FacebookAdapter(PlatformAdapter):
 
             await _random_delay(1, 2)
 
-            # Send with Enter
             await page.keyboard.press("Enter")
             await _random_delay(2, 3)
 

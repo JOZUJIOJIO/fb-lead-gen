@@ -155,43 +155,15 @@ async def import_cookies(
     # Save to file
     COOKIES_FILE.write_text(json.dumps(pw_cookies, ensure_ascii=False, indent=2))
 
-    # Try to inject into running browser if available
-    injected = False
-    try:
-        from patchright.async_api import async_playwright
-        import asyncio
-
-        async def _inject():
-            pw = await async_playwright().start()
-            ctx = await pw.chromium.launch_persistent_context(
-                user_data_dir="/tmp/leadflow-browser/facebook",
-                headless=False,
-                args=["--disable-blink-features=AutomationControlled"],
-            )
-            await ctx.add_cookies(pw_cookies)
-            # Verify by going to Facebook
-            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-            await page.goto("https://www.facebook.com", timeout=30000)
-            await asyncio.sleep(3)
-            await page.screenshot(path="/tmp/leadflow-browser/screenshots/after_cookie_import.png")
-            title = await page.title()
-            await ctx.close()
-            await pw.stop()
-            return title
-
-        title = asyncio.get_event_loop().run_until_complete(_inject())
-        injected = "login" not in title.lower()
-    except Exception as e:
-        logger.warning("Cookie injection into browser failed: %s", e)
-
     fb_count = sum(1 for c in pw_cookies if ".facebook.com" in c.get("domain", ""))
 
+    # Cookie file saved — browser will load it on next adapter.initialize()
+    # No need to inject into a running browser here; that caused event loop conflicts.
     return {
-        "message": f"已导入 {len(pw_cookies)} 个 Cookies（其中 Facebook 相关 {fb_count} 个）",
+        "message": f"已导入 {len(pw_cookies)} 个 Cookies（其中 Facebook 相关 {fb_count} 个）。下次启动任务时将自动加载。",
         "success": True,
         "total": len(pw_cookies),
         "facebook_count": fb_count,
-        "login_verified": injected,
     }
 
 
