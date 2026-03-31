@@ -20,8 +20,7 @@ logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT_CAMPAIGNS = 2
 DEFAULT_MAX_DAILY_MESSAGES = 50
-DEFAULT_SEND_INTERVAL_MIN = 60   # seconds
-DEFAULT_SEND_INTERVAL_MAX = 180  # seconds
+DEFAULT_MAX_PER_HOUR = 10
 
 # campaign_id -> asyncio.Task
 _running_tasks: dict[int, asyncio.Task] = {}
@@ -122,12 +121,7 @@ async def _run_campaign(campaign_id: int, db: Database, ai_config: AIConfig) -> 
         max_daily_raw = await db.get_setting("max_daily_messages")
         max_daily = int(max_daily_raw) if max_daily_raw else DEFAULT_MAX_DAILY_MESSAGES
 
-        interval_min_raw = await db.get_setting("send_interval_min")
-        interval_min = float(interval_min_raw) if interval_min_raw else DEFAULT_SEND_INTERVAL_MIN
-
-        interval_max_raw = await db.get_setting("send_interval_max")
-        interval_max = float(interval_max_raw) if interval_max_raw else DEFAULT_SEND_INTERVAL_MAX
-
+        max_per_hour: int = campaign.get("max_per_hour") or DEFAULT_MAX_PER_HOUR
         send_limit: int = campaign.get("send_limit") or 50
         platform: str = campaign.get("platform", "facebook").lower()
 
@@ -231,10 +225,15 @@ async def _run_campaign(campaign_id: int, db: Database, ai_config: AIConfig) -> 
                     campaign_id, target.get("name", "?"), exc,
                 )
 
-            # --- Human-like delay between sends ---
+            # --- Hourly rate limit: randomly distribute within the hour ---
             if sent_count < send_limit:
-                delay = random.uniform(interval_min, interval_max)
-                logger.debug("Campaign %d: waiting %.1fs before next target", campaign_id, delay)
+                base_interval = 3600.0 / max_per_hour
+                # Randomize ±40% around the base interval for human-like variance
+                delay = random.uniform(base_interval * 0.6, base_interval * 1.4)
+                logger.debug(
+                    "Campaign %d: waiting %.0fs before next target (max %d/hr)",
+                    campaign_id, delay, max_per_hour,
+                )
                 await asyncio.sleep(delay)
 
         # ------------------------------------------------------------------

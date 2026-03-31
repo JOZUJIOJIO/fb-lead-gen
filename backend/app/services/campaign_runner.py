@@ -386,10 +386,15 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                 campaign.progress_current = idx + 1
                 await session.commit()
 
-                # 4g. Wait random interval before next target
+                # 4g. Hourly rate limit: randomly distribute within the hour
                 if idx < len(targets) - 1:
-                    wait_secs = random.randint(settings.SEND_INTERVAL_MIN, settings.SEND_INTERVAL_MAX)
-                    logger.info("Campaign %d: waiting %ds before next target", campaign_id, wait_secs)
+                    max_per_hour = campaign.max_per_hour or 10
+                    base_interval = 3600.0 / max_per_hour
+                    wait_secs = random.uniform(base_interval * 0.6, base_interval * 1.4)
+                    logger.info(
+                        "Campaign %d: waiting %.0fs before next target (max %d/hr)",
+                        campaign_id, wait_secs, max_per_hour,
+                    )
                     await asyncio.sleep(wait_secs)
 
             # 5. Mark campaign as completed (unless it was paused/stopped)

@@ -75,6 +75,7 @@ interface Campaign {
   search_industry: string | null;
   persona_id: number | null;
   send_limit: number;
+  max_per_hour: number;
   progress_current: number;
   progress_total: number;
   created_at: string;
@@ -105,6 +106,7 @@ export default function CampaignDetail() {
   const [editIndustry, setEditIndustry] = useState('');
   const [editPersonaId, setEditPersonaId] = useState('');
   const [editSendLimit, setEditSendLimit] = useState(20);
+  const [editMaxPerHour, setEditMaxPerHour] = useState(10);
   const [saving, setSaving] = useState(false);
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
 
@@ -138,6 +140,7 @@ export default function CampaignDetail() {
     setEditIndustry(campaign.search_industry || '');
     setEditPersonaId(campaign.persona_id ? String(campaign.persona_id) : '');
     setEditSendLimit(campaign.send_limit);
+    setEditMaxPerHour(campaign.max_per_hour || 10);
     // Load personas for dropdown
     try {
       const data = await personaApi.list();
@@ -157,6 +160,7 @@ export default function CampaignDetail() {
         search_industry: editIndustry,
         persona_id: editPersonaId ? Number(editPersonaId) : null,
         send_limit: editSendLimit,
+        max_per_hour: editMaxPerHour,
       });
       await fetchCampaign();
       setEditing(false);
@@ -273,19 +277,27 @@ export default function CampaignDetail() {
                 className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm outline-none focus:border-[#0071e3] focus:bg-white" />
             </div>
           </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">人设</label>
+            <select value={editPersonaId} onChange={e => setEditPersonaId(e.target.value)}
+              className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm outline-none focus:border-[#0071e3] focus:bg-white">
+              <option value="">无</option>
+              {personas.map(p => (
+                <option key={p.id} value={p.id}>{p.name}{p.company_name ? ` - ${p.company_name}` : ''}</option>
+              ))}
+            </select>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">人设</label>
-              <select value={editPersonaId} onChange={e => setEditPersonaId(e.target.value)}
-                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm outline-none focus:border-[#0071e3] focus:bg-white">
-                <option value="">无</option>
-                {personas.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}{p.company_name ? ` - ${p.company_name}` : ''}</option>
-                ))}
-              </select>
+              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">每小时最多打招呼</label>
+              <div className="flex items-center gap-2">
+                <input type="number" min={1} max={60} value={editMaxPerHour} onChange={e => setEditMaxPerHour(Number(e.target.value))}
+                  className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm outline-none focus:border-[#0071e3] focus:bg-white" />
+              </div>
+              <p className="mt-1 text-xs text-[#86868b]">消息随机分散在每小时内发送</p>
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">发送限额</label>
+              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">总发送上限</label>
               <input type="number" min={1} max={500} value={editSendLimit} onChange={e => setEditSendLimit(Number(e.target.value))}
                 className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm outline-none focus:border-[#0071e3] focus:bg-white" />
             </div>
@@ -302,7 +314,7 @@ export default function CampaignDetail() {
           </div>
         </div>
       ) : (
-        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
           <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
             <p className="text-xs text-[#86868b]">平台</p>
             <p className="mt-1 text-sm font-medium text-[#1d1d1f] capitalize">{campaign.platform}</p>
@@ -318,6 +330,10 @@ export default function CampaignDetail() {
           <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
             <p className="text-xs text-[#86868b]">行业</p>
             <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.search_industry || '全部'}</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
+            <p className="text-xs text-[#86868b]">发送频率</p>
+            <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.max_per_hour || 10} 人/小时</p>
           </div>
         </div>
       )}

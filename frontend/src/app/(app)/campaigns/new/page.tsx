@@ -26,6 +26,7 @@ export default function NewCampaignPage() {
   const [industry, setIndustry] = useState('');
   const [personaId, setPersonaId] = useState('');
   const [sendLimit, setSendLimit] = useState(20);
+  const [maxPerHour, setMaxPerHour] = useState(10);
   const [reviewMode, setReviewMode] = useState(false);
   const [sendHourStart, setSendHourStart] = useState(9);
   const [sendHourEnd, setSendHourEnd] = useState(18);
@@ -52,6 +53,7 @@ export default function NewCampaignPage() {
         search_industry: industry,
         persona_id: personaId ? Number(personaId) : null,
         send_limit: sendLimit,
+        max_per_hour: maxPerHour,
         review_mode: reviewMode,
         send_hour_start: sendHourStart,
         send_hour_end: sendHourEnd,
@@ -243,23 +245,43 @@ export default function NewCampaignPage() {
           </div>
         </div>
 
-        {/* Step 4: Send Limit */}
+        {/* Step 4: Send Settings */}
         <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
           <div className="mb-1 flex items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0071e3] text-xs font-semibold text-white">4</span>
-            <h2 className="text-base font-semibold text-[#1d1d1f]">发送限额</h2>
+            <h2 className="text-base font-semibold text-[#1d1d1f]">发送设置</h2>
           </div>
-          <p className="mb-4 ml-8 text-sm text-[#86868b]">设置本次任务的最大发送数量</p>
-          <div className="ml-8">
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={sendLimit}
-              onChange={(e) => setSendLimit(Number(e.target.value))}
-              className="w-32 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-            />
-            <span className="ml-2 text-sm text-[#86868b]">条消息</span>
+          <p className="mb-4 ml-8 text-sm text-[#86868b]">控制发送频率和总量</p>
+          <div className="ml-8 space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">每小时最多打招呼</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={maxPerHour}
+                  onChange={(e) => setMaxPerHour(Number(e.target.value))}
+                  className="w-32 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <span className="text-sm text-[#86868b]">人/小时</span>
+              </div>
+              <p className="mt-1.5 text-xs text-[#86868b]">消息会随机分散在每小时内发送，模拟真人操作节奏</p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">总发送上限</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={sendLimit}
+                  onChange={(e) => setSendLimit(Number(e.target.value))}
+                  className="w-32 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <span className="text-sm text-[#86868b]">条消息</span>
+              </div>
+            </div>
           </div>
         </div>
 

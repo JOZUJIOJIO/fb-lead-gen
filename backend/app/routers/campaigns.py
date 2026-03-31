@@ -33,6 +33,7 @@ class CampaignCreate(BaseModel):
     search_industry: str = ""
     persona_id: Optional[int] = None
     send_limit: int = 20
+    max_per_hour: int = 10
     review_mode: bool = False
     send_hour_start: int = 9
     send_hour_end: int = 18
@@ -48,6 +49,7 @@ class CampaignResponse(BaseModel):
     search_industry: Optional[str]
     persona_id: Optional[int]
     send_limit: int
+    max_per_hour: int
     review_mode: bool
     send_hour_start: int
     send_hour_end: int
@@ -93,6 +95,7 @@ async def create_campaign(
         search_industry=body.search_industry,
         persona_id=body.persona_id,
         send_limit=body.send_limit,
+        max_per_hour=body.max_per_hour,
         review_mode=body.review_mode,
         send_hour_start=body.send_hour_start,
         send_hour_end=body.send_hour_end,
@@ -231,6 +234,7 @@ async def get_campaign(
         search_industry=campaign.search_industry,
         persona_id=campaign.persona_id,
         send_limit=campaign.send_limit,
+        max_per_hour=campaign.max_per_hour,
         review_mode=campaign.review_mode,
         send_hour_start=campaign.send_hour_start,
         send_hour_end=campaign.send_hour_end,
@@ -267,6 +271,7 @@ async def update_campaign(
     campaign.search_industry = body.search_industry
     campaign.persona_id = body.persona_id
     campaign.send_limit = body.send_limit
+    campaign.max_per_hour = body.max_per_hour
     campaign.review_mode = body.review_mode
     campaign.send_hour_start = body.send_hour_start
     campaign.send_hour_end = body.send_hour_end

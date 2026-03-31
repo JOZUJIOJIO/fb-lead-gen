@@ -26,6 +26,7 @@ class Database:
         await self._conn.execute("PRAGMA journal_mode=WAL")
         await self._conn.execute("PRAGMA foreign_keys=ON")
         await self._create_tables()
+        await self._migrate()
         await self._conn.commit()
 
     async def close(self) -> None:
@@ -61,6 +62,7 @@ class Database:
                 search_industry  TEXT,
                 persona_id       INTEGER REFERENCES personas(id),
                 send_limit       INTEGER DEFAULT 50,
+                max_per_hour     INTEGER DEFAULT 10,
                 status           TEXT NOT NULL DEFAULT 'draft',
                 progress_current INTEGER DEFAULT 0,
                 progress_total   INTEGER DEFAULT 0,
@@ -105,6 +107,16 @@ class Database:
             CREATE INDEX IF NOT EXISTS ix_campaigns_status        ON campaigns(status);
         """)
 
+    async def _migrate(self) -> None:
+        """Run lightweight migrations for schema changes."""
+        # Add max_per_hour column if missing (added in v0.2)
+        cursor = await self._conn.execute("PRAGMA table_info(campaigns)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "max_per_hour" not in columns:
+            await self._conn.execute(
+                "ALTER TABLE campaigns ADD COLUMN max_per_hour INTEGER DEFAULT 10"
+            )
+
     # -------------------------------------------------------------------------
     # Campaigns
     # -------------------------------------------------------------------------
@@ -117,6 +129,7 @@ class Database:
         search_industry: str = None,
         persona_id: int = None,
         send_limit: int = 50,
+        max_per_hour: int = 10,
         status: str = "draft",
         progress_current: int = 0,
         progress_total: int = 0,
@@ -126,13 +139,13 @@ class Database:
             """
             INSERT INTO campaigns
                 (platform, search_keywords, search_region, search_industry,
-                 persona_id, send_limit, status, progress_current, progress_total,
-                 created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 persona_id, send_limit, max_per_hour, status, progress_current,
+                 progress_total, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (platform, search_keywords, search_region, search_industry,
-             persona_id, send_limit, status, progress_current, progress_total,
-             now, now),
+             persona_id, send_limit, max_per_hour, status, progress_current,
+             progress_total, now, now),
         )
         await self._conn.commit()
         return cursor.lastrowid

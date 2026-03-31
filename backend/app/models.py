@@ -105,6 +105,7 @@ class Campaign(Base):
         Integer, ForeignKey("personas.id", ondelete="SET NULL"), nullable=True
     )
     send_limit: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    max_per_hour: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     review_mode: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     send_hour_start: Mapped[int] = mapped_column(Integer, default=9, nullable=False)
     send_hour_end: Mapped[int] = mapped_column(Integer, default=18, nullable=False)
