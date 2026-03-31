@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import HealthIndicator from './components/HealthIndicator';
 import Dashboard from './pages/Dashboard';
 import Campaigns from './pages/Campaigns';
 import NewCampaign from './pages/NewCampaign';
@@ -13,17 +14,23 @@ export default function App() {
     <BrowserRouter>
       <div className="flex h-screen bg-[#f5f5f7]">
         <Sidebar />
-        <main className="flex-1 overflow-auto p-8">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/campaigns" element={<Campaigns />} />
-            <Route path="/campaigns/new" element={<NewCampaign />} />
-            <Route path="/campaigns/:id" element={<CampaignDetail />} />
-            <Route path="/leads" element={<Leads />} />
-            <Route path="/personas" element={<Personas />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </main>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top bar with health indicator */}
+          <div className="flex items-center justify-end px-8 pt-5 pb-0">
+            <HealthIndicator />
+          </div>
+          <main className="flex-1 overflow-auto px-8 pb-8 pt-4">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/campaigns" element={<Campaigns />} />
+              <Route path="/campaigns/new" element={<NewCampaign />} />
+              <Route path="/campaigns/:id" element={<CampaignDetail />} />
+              <Route path="/leads" element={<Leads />} />
+              <Route path="/personas" element={<Personas />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </main>
+        </div>
       </div>
     </BrowserRouter>
   );
