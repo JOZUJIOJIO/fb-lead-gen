@@ -3,12 +3,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, X, Plus, Save, Eye } from 'lucide-react';
+import { ArrowLeft, X, Plus, Save, Eye, Sparkles } from 'lucide-react';
 import { personaApi } from '@/lib/api';
 import { personaStore } from '@/lib/localStore';
+import api from '@/lib/api';
 
 export default function NewPersonaPage() {
   const router = useRouter();
+
+  // AI generation
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   // Company
   const [companyName, setCompanyName] = useState('');
@@ -98,6 +103,30 @@ ${conversationRules || '[对话规则]'}`;
     router.push('/personas');
   };
 
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setAiGenerating(true);
+    setError('');
+    try {
+      const res = await api.post('/api/personas/generate', { description: aiPrompt });
+      const d = res.data;
+      if (d.name) setPersonaName(d.name);
+      if (d.company_name) setCompanyName(d.company_name);
+      if (d.company_description) setCompanyDesc(d.company_description);
+      if (Array.isArray(d.products)) setProducts(d.products);
+      if (d.salesperson_name) setSalesName(d.salesperson_name);
+      if (d.salesperson_title) setSalesTitle(d.salesperson_title);
+      if (d.tone) setTone(d.tone);
+      if (d.greeting_rules?.text) setGreetingRules(d.greeting_rules.text);
+      if (d.conversation_rules?.text) setConversationRules(d.conversation_rules.text);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'AI 生成失败，请检查 API Key 配置';
+      setError(msg);
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   return (
     <div>
       <div className="mb-8">
@@ -107,6 +136,33 @@ ${conversationRules || '[对话规则]'}`;
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">创建新人设</h1>
         <p className="mt-1 text-sm text-[#86868b]">配置 AI 销售代表的身份、公司信息和对话风格</p>
+      </div>
+
+      {/* AI Auto-Fill */}
+      <div className="mb-6 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 p-6 border border-blue-200/60 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="h-5 w-5 text-blue-600" />
+          <h2 className="text-base font-semibold text-[#1d1d1f]">AI 一键生成人设</h2>
+        </div>
+        <p className="mb-3 text-sm text-[#86868b]">输入简短描述，AI 自动填充所有字段</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            placeholder="例如：跨境电商行业，专业但友好的风格"
+            className="flex-1 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#0071e3]"
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAiGenerate(); } }}
+          />
+          <button
+            onClick={handleAiGenerate}
+            disabled={aiGenerating || !aiPrompt.trim()}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#0071e3] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#0077ed] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            <Sparkles className="h-4 w-4" />
+            {aiGenerating ? '生成中...' : '生成'}
+          </button>
+        </div>
       </div>
 
       {error && (

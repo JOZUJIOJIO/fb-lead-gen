@@ -119,6 +119,65 @@ async def get_lead(
     )
 
 
+@router.get("/export/csv")
+async def export_leads_csv(
+    campaign_id: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Export leads as CSV file download."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    query = select(Lead).options(selectinload(Lead.messages)).order_by(Lead.created_at.desc())
+    if campaign_id is not None:
+        query = query.where(Lead.campaign_id == campaign_id)
+    if status is not None:
+        query = query.where(Lead.status == LeadStatus(status))
+
+    result = await db.execute(query)
+    leads = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "ID", "姓名", "平台", "状态", "行业", "简介",
+        "主页链接", "失败原因", "AI消息", "日期",
+    ])
+    for lead in leads:
+        # Extract failure reason from raw_profile_data
+        failure = ""
+        if lead.raw_profile_data and isinstance(lead.raw_profile_data, dict):
+            failure = lead.raw_profile_data.get("failure_reason", lead.raw_profile_data.get("failure_code", ""))
+        # Get first outbound message
+        ai_msg = ""
+        for m in lead.messages:
+            if m.direction.value == "outbound":
+                ai_msg = m.content or ""
+                break
+        writer.writerow([
+            lead.id,
+            lead.name or "",
+            lead.platform.value,
+            lead.status.value,
+            lead.industry or "",
+            (lead.bio or "")[:200],
+            lead.profile_url or "",
+            failure,
+            ai_msg[:200],
+            lead.created_at.strftime("%Y-%m-%d %H:%M"),
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter(["\ufeff" + output.getvalue()]),  # BOM for Excel UTF-8
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=leads_export.csv"},
+    )
+
+
 @router.patch("/{lead_id}/status")
 async def update_lead_status(
     lead_id: int,

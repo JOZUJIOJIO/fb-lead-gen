@@ -151,3 +151,75 @@ async def delete_persona(
         raise HTTPException(status_code=404, detail="人设不存在")
     await db.delete(persona)
     await db.commit()
+
+
+class PersonaGenerateRequest(BaseModel):
+    """Input for AI persona generation — user provides a brief description."""
+    description: str  # e.g. "跨境电商行业，专业风格"
+
+
+@router.post("/generate", response_model=PersonaCreate)
+async def generate_persona_with_ai(
+    body: PersonaGenerateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Use the configured AI to generate a complete persona from a brief description."""
+    from app.services.ai_service import _get_provider_config, _default_model, _call_openai_compatible, _call_anthropic
+
+    provider, base_url, api_key = _get_provider_config()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="请先在设置中配置 AI API Key")
+
+    model = _default_model(provider)
+
+    system_prompt = "你是一个专业的销售人设设计师。根据用户描述，生成一个完整的 AI 销售代表人设配置。必须返回纯 JSON，不要包含 markdown。"
+
+    user_prompt = f"""根据以下描述，生成一个完整的销售人设 JSON：
+
+描述：{body.description}
+
+要求返回的 JSON 格式（所有字段必须有值，不要留空）：
+{{
+  "name": "人设名称（4-8字，如：跨境电商专家）",
+  "company_name": "公司名称",
+  "company_description": "公司简介（1-2句话）",
+  "products": ["产品1", "产品2", "产品3"],
+  "salesperson_name": "一个合适的英文或中文名字",
+  "salesperson_title": "职位头衔",
+  "tone": "professional 或 friendly 或 professional_friendly 或 casual 四选一",
+  "greeting_rules": {{"text": "打招呼策略（2-3句话）"}},
+  "conversation_rules": {{"text": "对话策略（2-3句话）"}}
+}}
+
+只返回 JSON，不要任何其他文字。"""
+
+    try:
+        if provider == "anthropic":
+            raw = await _call_anthropic(api_key, model, system_prompt, user_prompt)
+        else:
+            raw = await _call_openai_compatible(base_url, api_key, model, system_prompt, user_prompt)
+
+        # Parse JSON from response (strip markdown fences if present)
+        import json
+        clean = raw.strip()
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0]
+        data = json.loads(clean)
+
+        return PersonaCreate(
+            name=data.get("name", "AI 生成人设"),
+            company_name=data.get("company_name"),
+            company_description=data.get("company_description"),
+            products=data.get("products"),
+            salesperson_name=data.get("salesperson_name"),
+            salesperson_title=data.get("salesperson_title"),
+            tone=data.get("tone", "professional_friendly"),
+            greeting_rules=data.get("greeting_rules"),
+            conversation_rules=data.get("conversation_rules"),
+            system_prompt=None,
+            is_default=False,
+        )
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="AI 返回格式错误，请重试")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 生成失败：{e}")

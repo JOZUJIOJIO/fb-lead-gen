@@ -69,6 +69,8 @@ class LeadBrief(BaseModel):
     name: Optional[str]
     status: str
     profile_url: Optional[str]
+    failure_code: Optional[str] = None
+    failure_reason: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -222,16 +224,22 @@ async def get_campaign(
     if campaign is None:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    leads_brief = [
-        LeadBrief(
+    leads_brief = []
+    for l in campaign.leads:
+        fc = None
+        fr = None
+        if l.raw_profile_data and isinstance(l.raw_profile_data, dict):
+            fc = l.raw_profile_data.get("failure_code")
+            fr = l.raw_profile_data.get("failure_reason")
+        leads_brief.append(LeadBrief(
             id=l.id,
             name=l.name,
             status=l.status.value,
             profile_url=l.profile_url,
+            failure_code=fc,
+            failure_reason=fr,
             created_at=l.created_at,
-        )
-        for l in campaign.leads
-    ]
+        ))
     return CampaignDetail(
         id=campaign.id,
         name=campaign.name,

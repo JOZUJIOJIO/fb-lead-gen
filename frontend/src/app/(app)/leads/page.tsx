@@ -1,9 +1,10 @@
 'use client';
 
 import { Fragment, useEffect, useState } from 'react';
-import { Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { leadApi } from '@/lib/api';
+import api from '@/lib/api';
 
 interface Lead {
   id: number;
@@ -73,9 +74,30 @@ export default function LeadsPage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">线索数据库</h1>
-        <p className="mt-1 text-sm text-[#86868b]">查看和管理所有获��的线索</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">线索数据库</h1>
+          <p className="mt-1 text-sm text-[#86868b]">查看和管理所有获取的线索</p>
+        </div>
+        <button
+          onClick={async () => {
+            try {
+              const params = new URLSearchParams();
+              if (statusFilter) params.set('status', statusFilter);
+              const res = await api.get(`/api/leads/export/csv?${params}`, { responseType: 'blob' });
+              const url = window.URL.createObjectURL(new Blob([res.data]));
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `leads_${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              window.URL.revokeObjectURL(url);
+            } catch { alert('导出失败，请检查后端服务'); }
+          }}
+          className="inline-flex items-center gap-2 rounded-full border border-[#e5e5e7] bg-white px-5 py-2.5 text-sm font-medium text-[#1d1d1f] transition-colors hover:bg-[#f5f5f7]"
+        >
+          <Download className="h-4 w-4" />
+          导出 CSV
+        </button>
       </div>
 
       {/* Filters */}

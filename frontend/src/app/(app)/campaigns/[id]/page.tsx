@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye, RotateCcw, AlertTriangle } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { campaignApi, leadApi } from '@/lib/api';
 
@@ -11,6 +11,8 @@ interface LeadBrief {
   name: string | null;
   status: string;
   profile_url: string | null;
+  failure_code: string | null;
+  failure_reason: string | null;
   created_at: string;
 }
 
@@ -310,6 +312,34 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
         </div>
       )}
 
+      {/* Failure Summary — show if any leads failed */}
+      {(() => {
+        const failedLeads = campaign.leads.filter(l => l.status === 'failed' && l.failure_code);
+        if (failedLeads.length === 0) return null;
+        const codeCount: Record<string, { count: number; reason: string }> = {};
+        for (const l of failedLeads) {
+          const code = l.failure_code || 'unknown';
+          if (!codeCount[code]) codeCount[code] = { count: 0, reason: l.failure_reason || code };
+          codeCount[code].count++;
+        }
+        return (
+          <div className="mb-6 rounded-2xl bg-red-50 border border-red-200 shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-red-100 px-6 py-3.5">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <h2 className="text-sm font-semibold text-red-800">失败原因分析 ({failedLeads.length} 个失败)</h2>
+            </div>
+            <div className="divide-y divide-red-100">
+              {Object.entries(codeCount).map(([code, info]) => (
+                <div key={code} className="flex items-center justify-between px-6 py-2.5">
+                  <span className="text-sm text-red-800">{info.reason}</span>
+                  <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">{info.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Leads Table */}
       <div className="rounded-2xl bg-white border border-[#e5e5e7]/60 shadow-sm overflow-hidden">
         <div className="border-b border-[#e5e5e7]/60 px-6 py-3.5">
@@ -321,6 +351,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
               <tr className="border-b border-[#e5e5e7]/40">
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">姓名</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">状态</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">失败原因</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">时间</th>
               </tr>
             </thead>
@@ -329,6 +360,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                 <tr key={lead.id} className="transition-colors hover:bg-[#f5f5f7]/50">
                   <td className="px-6 py-3.5 text-sm font-medium text-[#1d1d1f]">{lead.name || '未知'}</td>
                   <td className="px-6 py-3.5"><StatusBadge status={lead.status} /></td>
+                  <td className="px-6 py-3.5 text-sm text-red-600">{lead.failure_reason || ''}</td>
                   <td className="px-6 py-3.5 text-sm text-[#86868b]">{new Date(lead.created_at).toLocaleString('zh-CN')}</td>
                 </tr>
               ))}
