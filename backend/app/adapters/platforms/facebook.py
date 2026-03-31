@@ -440,12 +440,28 @@ class FacebookAdapter(PlatformAdapter):
             await message_btn.click()
             await _random_delay(2, 4)
 
+            # ---- Step 1b: Detect platform restrictions ----
+            restriction = await self._detect_platform_restriction(page)
+            if restriction:
+                logger.warning(
+                    "send_message: platform restriction detected on %s: %s",
+                    profile_url, restriction,
+                )
+                await _save_screenshot(page, "platform_restricted")
+                return {"success": False, "failure_code": restriction}
+
             # ---- Step 2: Find message input ----
             msg_input = await self._find_message_input(page)
 
             # Retry once: maybe a Messenger redirect happened
             if not msg_input:
                 await _random_delay(2, 3)
+                # Check again for restrictions that may have appeared after delay
+                restriction = await self._detect_platform_restriction(page)
+                if restriction:
+                    logger.warning("send_message: restriction after retry on %s: %s", profile_url, restriction)
+                    await _save_screenshot(page, "platform_restricted_retry")
+                    return {"success": False, "failure_code": restriction}
                 msg_input = await self._find_message_input(page)
 
             # Fallback: try navigating to Messenger directly
@@ -524,6 +540,77 @@ class FacebookAdapter(PlatformAdapter):
 
         if uid:
             return f"https://www.facebook.com/messages/t/{uid}"
+        return None
+
+    # Restriction signals: (text_pattern, failure_code)
+    _RESTRICTION_SIGNALS = [
+        # Identity verification
+        ("confirm your identity", "platform_identity_verification"),
+        ("确认你的身份", "platform_identity_verification"),
+        ("verify your identity", "platform_identity_verification"),
+        ("验证你的身份", "platform_identity_verification"),
+        # Action restricted / rate limited
+        ("actions have been restricted", "platform_action_restricted"),
+        ("操作受到限制", "platform_action_restricted"),
+        ("action blocked", "platform_action_restricted"),
+        ("操作已被屏蔽", "platform_action_restricted"),
+        ("you can't use this feature", "platform_feature_blocked"),
+        ("你无法使用此功能", "platform_feature_blocked"),
+        ("temporarily blocked", "platform_temporarily_blocked"),
+        ("暂时被限制", "platform_temporarily_blocked"),
+        # Messaging specifically restricted
+        ("can't send messages", "platform_messaging_blocked"),
+        ("无法发送消息", "platform_messaging_blocked"),
+        ("can't message this", "platform_messaging_blocked"),
+        ("unable to send", "platform_messaging_blocked"),
+        # Checkpoint / security
+        ("unusual activity", "platform_unusual_activity"),
+        ("异常活动", "platform_unusual_activity"),
+        ("suspicious activity", "platform_unusual_activity"),
+        ("security check", "platform_security_check"),
+        ("安全检查", "platform_security_check"),
+    ]
+
+    async def _detect_platform_restriction(self, page: Page) -> str | None:
+        """Check if Facebook is showing a restriction/identity dialog.
+
+        Scans visible text in dialogs, overlays, and the main page body for
+        known restriction patterns. Returns a failure_code string or None.
+        """
+        try:
+            # Check URL first — checkpoint redirects
+            url = (page.url or "").lower()
+            if "/checkpoint" in url:
+                return "platform_checkpoint_redirect"
+
+            # Grab visible text from likely dialog/overlay containers
+            text = await page.evaluate("""() => {
+                // Look in dialogs and overlays first
+                const containers = [
+                    ...document.querySelectorAll('[role="dialog"]'),
+                    ...document.querySelectorAll('[role="alertdialog"]'),
+                    ...document.querySelectorAll('[data-testid*="dialog"]'),
+                    ...document.querySelectorAll('[class*="overlay"]'),
+                    ...document.querySelectorAll('[class*="modal"]'),
+                ];
+                if (containers.length > 0) {
+                    return containers.map(c => c.innerText || '').join(' ');
+                }
+                // Fall back to body text (first 3000 chars)
+                return (document.body.innerText || '').substring(0, 3000);
+            }""")
+
+            if not text:
+                return None
+
+            text_lower = text.lower()
+            for pattern, code in self._RESTRICTION_SIGNALS:
+                if pattern in text_lower:
+                    return code
+
+        except Exception as e:
+            logger.debug("_detect_platform_restriction: evaluation error: %s", e)
+
         return None
 
     # -- Cleanup -------------------------------------------------------------

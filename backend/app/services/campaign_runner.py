@@ -17,6 +17,24 @@ from app.services.ai_service import analyze_profile, generate_greeting
 
 logger = logging.getLogger(__name__)
 
+# Human-readable failure reason lookup
+_FAILURE_REASONS: dict[str, str] = {
+    "message_button_not_found": "目标页面没有找到「发消息」按钮",
+    "message_input_not_found": "消息输入框未找到（重试和 Messenger 回退均失败）",
+    "send_exception": "发送过程中发生异常",
+    "send_returned_false": "发送函数返回失败",
+    "greeting_generation_failed": "AI 问候语生成失败",
+    "processing_exception": "处理流程异常",
+    "platform_identity_verification": "Facebook 要求验证身份才能发送消息",
+    "platform_action_restricted": "Facebook 限制了当前操作（异常活动检测）",
+    "platform_feature_blocked": "Facebook 阻止使用此功能",
+    "platform_temporarily_blocked": "Facebook 暂时封锁了发消息功能",
+    "platform_messaging_blocked": "Facebook 阻止向此用户发送消息",
+    "platform_unusual_activity": "Facebook 检测到异常活动",
+    "platform_security_check": "Facebook 安全检查拦截",
+    "platform_checkpoint_redirect": "Facebook 跳转到安全检查页面",
+}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -423,11 +441,29 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                             sent_in_session += 1
                         else:
                             # Record structured failure reason
+                            is_platform_restriction = (
+                                failure_code and failure_code.startswith("platform_")
+                            )
                             profile_meta = lead.raw_profile_data or {}
                             if isinstance(profile_meta, dict):
                                 profile_meta["failure_code"] = failure_code
                                 profile_meta["failure_step"] = "send_message"
+                                profile_meta["failure_reason"] = _FAILURE_REASONS.get(
+                                    failure_code, failure_code
+                                )
                             lead.raw_profile_data = profile_meta
+
+                            if is_platform_restriction:
+                                # Platform-level block — don't bother checking login,
+                                # and pause campaign to avoid burning more requests.
+                                logger.error(
+                                    "Campaign %d: PLATFORM RESTRICTION for %s (code=%s) — pausing campaign",
+                                    campaign_id, target_name, failure_code,
+                                )
+                                lead.status = LeadStatus.failed
+                                campaign.status = CampaignStatus.paused
+                                await session.commit()
+                                break
 
                             # Check if send failure is due to login expiry
                             login_still_ok = await _verify_facebook_login(adapter)
