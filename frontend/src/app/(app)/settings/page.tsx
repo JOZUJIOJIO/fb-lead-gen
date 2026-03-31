@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Eye, EyeOff, Cookie, CheckCircle, AlertCircle, Upload } from 'lucide-react';
+import { Save, Eye, EyeOff, Cookie, CheckCircle, AlertCircle, Upload, Zap } from 'lucide-react';
 import { settingsApi, isAuthError } from '@/lib/api';
 import api from '@/lib/api';
 
@@ -14,6 +14,8 @@ export default function SettingsPage() {
   const [maxDailyMessages, setMaxDailyMessages] = useState(50);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testing, setTesting] = useState(false);
 
   // Cookie state
   const [cookieJson, setCookieJson] = useState('');
@@ -255,6 +257,33 @@ export default function SettingsPage() {
                 />
               </div>
             )}
+            {/* Test Connection */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={async () => {
+                  setTesting(true);
+                  setTestResult(null);
+                  try {
+                    const res = await api.post('/api/settings/test-ai');
+                    setTestResult(res.data);
+                  } catch {
+                    setTestResult({ success: false, message: '请求失败，请先保存设置' });
+                  }
+                  setTesting(false);
+                }}
+                disabled={testing}
+                className="inline-flex items-center gap-2 rounded-full border border-[#e5e5e7] bg-white px-4 py-2 text-sm font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] disabled:opacity-50"
+              >
+                <Zap className="h-4 w-4" />
+                {testing ? '测试中...' : '测试连接'}
+              </button>
+              {testResult && (
+                <span className={`flex items-center gap-1.5 text-sm ${testResult.success ? 'text-green-600' : 'text-red-600'}`}>
+                  {testResult.success ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                  {testResult.message}
+                </span>
+              )}
+            </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">
                 代理地址

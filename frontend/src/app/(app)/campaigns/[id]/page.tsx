@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Fragment } from 'react';
+import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye, RotateCcw, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { campaignApi, leadApi } from '@/lib/api';
 
@@ -51,6 +52,8 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   const [pendingLeads, setPendingLeads] = useState<PendingLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<number | null>(null);
+  const [expandedLeadId, setExpandedLeadId] = useState<number | null>(null);
+  const [expandedMessages, setExpandedMessages] = useState<{id: number; direction: string; content: string; created_at: string}[]>([]);
 
   const fetchCampaign = useCallback(async () => {
     try {
@@ -353,16 +356,62 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">状态</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">失败原因</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">时间</th>
+                <th className="w-10 px-6 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e5e5e7]/40">
               {campaign.leads.map((lead) => (
-                <tr key={lead.id} className="transition-colors hover:bg-[#f5f5f7]/50">
-                  <td className="px-6 py-3.5 text-sm font-medium text-[#1d1d1f]">{lead.name || '未知'}</td>
-                  <td className="px-6 py-3.5"><StatusBadge status={lead.status} /></td>
-                  <td className="px-6 py-3.5 text-sm text-red-600">{lead.failure_reason || ''}</td>
-                  <td className="px-6 py-3.5 text-sm text-[#86868b]">{new Date(lead.created_at).toLocaleString('zh-CN')}</td>
-                </tr>
+                <Fragment key={lead.id}>
+                  <tr
+                    onClick={async () => {
+                      if (expandedLeadId === lead.id) {
+                        setExpandedLeadId(null);
+                        return;
+                      }
+                      setExpandedLeadId(lead.id);
+                      try {
+                        const res = await leadApi.get(String(lead.id));
+                        setExpandedMessages(res.data.messages || []);
+                      } catch { setExpandedMessages([]); }
+                    }}
+                    className="cursor-pointer transition-colors hover:bg-[#f5f5f7]/50"
+                  >
+                    <td className="px-6 py-3.5 text-sm font-medium text-[#1d1d1f]">{lead.name || '未知'}</td>
+                    <td className="px-6 py-3.5"><StatusBadge status={lead.status} /></td>
+                    <td className="px-6 py-3.5 text-sm text-red-600">{lead.failure_reason || ''}</td>
+                    <td className="px-6 py-3.5 text-sm text-[#86868b]">{new Date(lead.created_at).toLocaleString('zh-CN')}</td>
+                    <td className="px-6 py-3.5">
+                      {expandedLeadId === lead.id ? <ChevronUp className="h-4 w-4 text-[#86868b]" /> : <ChevronDown className="h-4 w-4 text-[#86868b]" />}
+                    </td>
+                  </tr>
+                  {expandedLeadId === lead.id && (
+                    <tr>
+                      <td colSpan={5} className="bg-[#fafafa] px-6 py-4">
+                        {expandedMessages.length > 0 ? (
+                          <div className="space-y-2 max-w-xl">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-[#86868b] mb-2">消息记录</p>
+                            {expandedMessages.map((msg) => (
+                              <div key={msg.id} className={`rounded-xl p-3 text-sm ${msg.direction === 'outbound' ? 'bg-blue-50 text-blue-900' : 'bg-white border border-[#e5e5e7] text-[#1d1d1f]'}`}>
+                                <div className="mb-1 flex items-center justify-between">
+                                  <span className="text-xs font-medium">{msg.direction === 'outbound' ? 'AI 发送' : '对方回复'}</span>
+                                  <span className="text-xs text-[#86868b]">{new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <p>{msg.content}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-[#86868b]">暂无消息记录</p>
+                        )}
+                        {lead.profile_url && (
+                          <a href={lead.profile_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs text-[#0071e3] hover:underline">
+                            查看 Facebook 主页
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

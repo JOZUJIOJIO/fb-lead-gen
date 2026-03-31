@@ -177,6 +177,26 @@ async def cookies_status(user: User = Depends(get_current_user)):
     return {"imported": False, "total": 0, "facebook_count": 0}
 
 
+@router.post("/test-ai")
+async def test_ai_connection(user: User = Depends(get_current_user)):
+    """Test the configured AI provider by sending a trivial request."""
+    from app.services.ai_service import _get_provider_config, _default_model, _call_openai_compatible, _call_anthropic
+
+    provider, base_url, api_key = _get_provider_config()
+    if not api_key:
+        return {"success": False, "message": "未配置 API Key"}
+
+    model = _default_model(provider)
+    try:
+        if provider == "anthropic":
+            result = await _call_anthropic(api_key, model, "You are a test.", "Say OK.")
+        else:
+            result = await _call_openai_compatible(base_url, api_key, model, "You are a test.", "Say OK.")
+        return {"success": True, "message": f"连接成功 ({provider}/{model})", "response": result[:50]}
+    except Exception as e:
+        return {"success": False, "message": f"连接失败: {e}"}
+
+
 def _persist_env(updates: dict[str, str]):
     """Merge updates into the .env file."""
     env_path = _env_file_path()
