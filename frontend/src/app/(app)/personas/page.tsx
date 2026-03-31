@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Star, Building2, User, Palette, Trash2 } from 'lucide-react';
 import { personaApi } from '@/lib/api';
+import { personaStore, type LocalPersona } from '@/lib/localStore';
 
 interface Persona {
   id: number;
@@ -26,9 +27,25 @@ export default function PersonasPage() {
   const [loading, setLoading] = useState(true);
 
   const fetchPersonas = () => {
+    // 1. Load from localStorage FIRST (instant, always available)
+    const local = personaStore.list();
+    if (local.length > 0) {
+      setPersonas(local as Persona[]);
+    }
+
+    // 2. Background sync from backend API
     personaApi.list()
-      .then(res => setPersonas(res.data))
-      .catch(err => console.error('Failed to load personas:', err))
+      .then(res => {
+        const backendList = res.data as LocalPersona[];
+        if (Array.isArray(backendList) && backendList.length > 0) {
+          // Backend has data — use it as source of truth and update localStorage
+          personaStore.replaceFromBackend(backendList);
+          setPersonas(backendList as Persona[]);
+        }
+      })
+      .catch(() => {
+        // Backend unavailable — localStorage data already shown
+      })
       .finally(() => setLoading(false));
   };
 
@@ -40,11 +57,14 @@ export default function PersonasPage() {
     e.preventDefault();
     e.stopPropagation();
     if (!confirm('确定删除该人设？')) return;
+    // 1. Delete from localStorage first
+    personaStore.delete(id);
+    setPersonas(personaStore.list() as Persona[]);
+    // 2. Background sync to backend
     try {
       await personaApi.delete(String(id));
-      setPersonas(personas.filter(p => p.id !== id));
     } catch (err) {
-      console.error('Failed to delete persona:', err);
+      console.error('Failed to delete persona from backend:', err);
     }
   };
 

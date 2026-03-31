@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, X, Plus, Save, Eye } from 'lucide-react';
 import { personaApi } from '@/lib/api';
+import { personaStore } from '@/lib/localStore';
 
 export default function NewPersonaPage() {
   const router = useRouter();
@@ -67,27 +68,33 @@ ${conversationRules || '[对话规则]'}`;
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setError('');
+
+    const payload = {
+      name: personaName,
+      company_name: companyName || null,
+      company_description: companyDesc || null,
+      products: products.length > 0 ? products : null,
+      salesperson_name: salesName || null,
+      salesperson_title: salesTitle || null,
+      tone,
+      greeting_rules: greetingRules ? { text: greetingRules } : null,
+      conversation_rules: conversationRules ? { text: conversationRules } : null,
+      system_prompt: generatePreview(),
+      is_default: false,
+    };
+
+    // 1. Save to localStorage FIRST (guaranteed to persist)
+    personaStore.create(payload);
+
+    // 2. Background sync to backend API
     try {
-      await personaApi.create({
-        name: personaName,
-        company_name: companyName || null,
-        company_description: companyDesc || null,
-        products: products.length > 0 ? products : null,
-        salesperson_name: salesName || null,
-        salesperson_title: salesTitle || null,
-        tone,
-        greeting_rules: greetingRules ? { text: greetingRules } : null,
-        conversation_rules: conversationRules ? { text: conversationRules } : null,
-        system_prompt: generatePreview(),
-        is_default: false,
-      });
-      router.push('/personas');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '创建失败，请重试';
-      setError(message);
-    } finally {
-      setIsSubmitting(false);
+      await personaApi.create(payload);
+    } catch {
+      // Backend sync failed — data safe in localStorage
     }
+
+    setIsSubmitting(false);
+    router.push('/personas');
   };
 
   return (

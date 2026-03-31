@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, X, Plus, Save, Eye, Star, Trash2 } from 'lucide-react';
 import { personaApi } from '@/lib/api';
+import { personaStore } from '@/lib/localStore';
 
 interface PersonaData {
   id: number;
@@ -47,6 +48,25 @@ export default function PersonaDetailPage({ params }: { params: { id: string } }
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // 1. Try loading from localStorage first (instant)
+    const local = personaStore.get(Number(params.id));
+    if (local) {
+      setPersonaName(local.name);
+      setCompanyName(local.company_name || '');
+      setCompanyDesc(local.company_description || '');
+      setProducts(Array.isArray(local.products) ? local.products : []);
+      setSalesName(local.salesperson_name || '');
+      setSalesTitle(local.salesperson_title || '');
+      setTone(local.tone || 'professional');
+      const gr = local.greeting_rules as { text?: string } | null;
+      const cr = local.conversation_rules as { text?: string } | null;
+      setGreetingRules(gr?.text || '');
+      setConversationRules(cr?.text || '');
+      setIsDefault(local.is_default ?? false);
+      setLoading(false);
+    }
+
+    // 2. Background sync from backend API
     personaApi.get(params.id)
       .then(res => {
         const p: PersonaData = res.data;
@@ -62,8 +82,10 @@ export default function PersonaDetailPage({ params }: { params: { id: string } }
         setIsDefault(p.is_default);
       })
       .catch(err => {
-        console.error('Failed to load persona:', err);
-        setError('人设不存在');
+        if (!local) {
+          console.error('Failed to load persona:', err);
+          setError('人设不存在');
+        }
       })
       .finally(() => setLoading(false));
   }, [params.id]);
@@ -104,37 +126,42 @@ ${conversationRules || '[对话规则]'}`;
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setError('');
+
+    const payload = {
+      name: personaName,
+      company_name: companyName || null,
+      company_description: companyDesc || null,
+      products: products.length > 0 ? products : null,
+      salesperson_name: salesName || null,
+      salesperson_title: salesTitle || null,
+      tone,
+      greeting_rules: greetingRules ? { text: greetingRules } : null,
+      conversation_rules: conversationRules ? { text: conversationRules } : null,
+      system_prompt: generatePreview(),
+      is_default: isDefault,
+    };
+
+    // 1. Save to localStorage FIRST
+    personaStore.update(Number(params.id), payload);
+
+    // 2. Background sync to backend
     try {
-      await personaApi.update(params.id, {
-        name: personaName,
-        company_name: companyName || null,
-        company_description: companyDesc || null,
-        products: products.length > 0 ? products : null,
-        salesperson_name: salesName || null,
-        salesperson_title: salesTitle || null,
-        tone,
-        greeting_rules: greetingRules ? { text: greetingRules } : null,
-        conversation_rules: conversationRules ? { text: conversationRules } : null,
-        system_prompt: generatePreview(),
-        is_default: isDefault,
-      });
-      router.push('/personas');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '保存失败，请重试';
-      setError(message);
-    } finally {
-      setIsSubmitting(false);
+      await personaApi.update(params.id, payload);
+    } catch {
+      // Backend sync failed — data safe in localStorage
     }
+
+    setIsSubmitting(false);
+    router.push('/personas');
   };
 
   const handleDelete = async () => {
     if (!confirm('确定删除该人设？此操作不可撤销。')) return;
-    try {
-      await personaApi.delete(params.id);
-      router.push('/personas');
-    } catch (err) {
-      console.error('Failed to delete persona:', err);
-    }
+    // 1. Delete from localStorage first
+    personaStore.delete(Number(params.id));
+    // 2. Background sync to backend
+    try { await personaApi.delete(params.id); } catch {}
+    router.push('/personas');
   };
 
   if (loading) {
