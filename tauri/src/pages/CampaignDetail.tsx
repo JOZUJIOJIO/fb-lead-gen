@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, StopCircle, Pencil, Save, X } from 'lucide-react';
+import { ArrowLeft, Play, Pause, StopCircle, Pencil, Save, X, RotateCcw } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { campaignApi, personaApi } from '../lib/ipc';
 import { campaignStore, personaStore } from '../lib/localStore';
@@ -111,7 +111,7 @@ export default function CampaignDetail() {
   const [saving, setSaving] = useState(false);
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
 
-  const canEdit = campaign && (campaign.status === 'draft' || campaign.status === 'paused');
+  const canEdit = campaign && (campaign.status === 'draft' || campaign.status === 'paused' || campaign.status === 'failed');
 
   const fetchCampaign = async () => {
     if (!id) return;
@@ -252,6 +252,12 @@ export default function CampaignDetail() {
               <button onClick={() => handleAction('start')} disabled={actionLoading}
                 className="inline-flex items-center gap-2 rounded-full bg-[#0071e3] px-5 py-2 text-sm font-medium text-white hover:bg-[#0077ed] disabled:opacity-50">
                 <Play className="h-4 w-4" /> 启动
+              </button>
+            )}
+            {campaign.status === 'failed' && (
+              <button onClick={() => handleAction('start')} disabled={actionLoading}
+                className="inline-flex items-center gap-2 rounded-full bg-[#0071e3] px-5 py-2 text-sm font-medium text-white hover:bg-[#0077ed] disabled:opacity-50">
+                <RotateCcw className="h-4 w-4" /> 重新启动
               </button>
             )}
           </div>

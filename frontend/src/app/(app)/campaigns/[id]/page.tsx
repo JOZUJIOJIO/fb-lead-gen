@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye } from 'lucide-react';
+import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye, RotateCcw } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { campaignApi, leadApi } from '@/lib/api';
 
@@ -202,6 +202,12 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
               <button onClick={handleResume} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100">
                 <Play className="h-4 w-4" />
                 继续
+              </button>
+            )}
+            {campaign.status === 'failed' && (
+              <button onClick={handleResume} className="inline-flex items-center gap-1.5 rounded-full bg-[#0071e3] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0077ed]">
+                <RotateCcw className="h-4 w-4" />
+                重新启动
               </button>
             )}
             {(campaign.status === 'running' || campaign.status === 'paused') && (
