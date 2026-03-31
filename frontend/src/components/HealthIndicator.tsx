@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Activity } from 'lucide-react';
-import api, { campaignApi, isAuthError } from '@/lib/api';
+import api from '@/lib/api';
 
 type Status = 'checking' | 'ok' | 'warn' | 'error';
 
@@ -34,10 +34,11 @@ export default function HealthIndicator() {
   const runChecks = useCallback(async () => {
     const next: HealthState = { ...INITIAL };
 
-    // 1. Backend health
+    // 1. Backend health — use fetch directly to avoid triggering 401 redirect
     try {
-      await api.get('/health');
-      next.backend = 'ok';
+      const baseURL = api.defaults.baseURL || 'http://localhost:8000';
+      const res = await fetch(`${baseURL}/health`);
+      next.backend = res.ok ? 'ok' : 'error';
     } catch {
       next.backend = 'error';
       next.api = 'error';
@@ -47,42 +48,70 @@ export default function HealthIndicator() {
       return;
     }
 
+    // Helper: fetch with auth token but without triggering the axios 401 interceptor
+    const baseURL = api.defaults.baseURL || 'http://localhost:8000';
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    async function safeFetch(path: string) {
+      const res = await fetch(`${baseURL}${path}`, { headers });
+      if (res.status === 401) return { ok: false, status: 401, data: null };
+      if (!res.ok) return { ok: false, status: res.status, data: null };
+      return { ok: true, status: 200, data: await res.json() };
+    }
+
     // 2. API key / settings
     try {
-      const res = await api.get('/api/settings');
-      const s = res.data;
-      next.apiProvider = s.ai_provider || 'openai';
-      const hasKey =
-        (s.ai_provider === 'openai' && s.openai_api_key_set) ||
-        (s.ai_provider === 'anthropic' && s.anthropic_api_key_set) ||
-        (s.ai_provider === 'kimi' && s.kimi_api_key_set) ||
-        (s.ai_provider === 'openrouter' && s.openrouter_api_key_set);
-      next.api = hasKey ? 'ok' : 'warn';
-    } catch (err) {
-      // 401 means auth expired — interceptor will redirect to login
-      next.api = isAuthError(err) ? 'error' : 'warn';
+      const res = await safeFetch('/api/settings');
+      if (res.status === 401) {
+        next.api = 'error';
+        next.cookie = 'error';
+        next.tasks = 'error';
+        setHealth(next);
+        return;
+      }
+      if (res.ok && res.data) {
+        const s = res.data;
+        next.apiProvider = s.ai_provider || 'openai';
+        const hasKey =
+          (s.ai_provider === 'openai' && s.openai_api_key_set) ||
+          (s.ai_provider === 'anthropic' && s.anthropic_api_key_set) ||
+          (s.ai_provider === 'kimi' && s.kimi_api_key_set) ||
+          (s.ai_provider === 'openrouter' && s.openrouter_api_key_set);
+        next.api = hasKey ? 'ok' : 'warn';
+      } else {
+        next.api = 'warn';
+      }
+    } catch {
+      next.api = 'warn';
     }
 
     // 3. Cookie status
     try {
-      const res = await api.get('/api/settings/cookies/status');
-      const c = res.data;
-      next.cookie = c.imported && c.facebook_count > 0 ? 'ok' : 'warn';
-    } catch (err) {
-      next.cookie = isAuthError(err) ? 'error' : 'warn';
+      const res = await safeFetch('/api/settings/cookies/status');
+      if (res.ok && res.data) {
+        const c = res.data;
+        next.cookie = c.imported && c.facebook_count > 0 ? 'ok' : 'warn';
+      } else {
+        next.cookie = 'warn';
+      }
+    } catch {
+      next.cookie = 'warn';
     }
 
     // 4. Running tasks
     try {
-      const res = await campaignApi.list();
-      const campaigns = res.data;
-      const running = Array.isArray(campaigns)
-        ? campaigns.filter((c: { status: string }) => c.status === 'running').length
-        : 0;
-      next.runningCount = running;
-      next.tasks = running > 0 ? 'ok' : 'warn';
-    } catch (err) {
-      next.tasks = isAuthError(err) ? 'error' : 'warn';
+      const res = await safeFetch('/api/campaigns');
+      if (res.ok && Array.isArray(res.data)) {
+        const running = res.data.filter((c: { status: string }) => c.status === 'running').length;
+        next.runningCount = running;
+        next.tasks = running > 0 ? 'ok' : 'warn';
+      } else {
+        next.tasks = 'warn';
+      }
+    } catch {
+      next.tasks = 'warn';
     }
 
     setHealth(next);

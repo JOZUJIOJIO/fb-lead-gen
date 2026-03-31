@@ -87,6 +87,13 @@ async def create_campaign(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Validate persona exists
+    if body.persona_id:
+        from app.models import Persona
+        result = await db.execute(select(Persona).where(Persona.id == body.persona_id))
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=400, detail="所选人设不存在，请重新选择")
+
     campaign = Campaign(
         name=body.name or body.search_keywords,
         platform=PlatformEnum(body.platform),
@@ -463,11 +470,19 @@ async def review_lead_message(
         adapter = FacebookAdapter()
         try:
             await adapter.initialize()
-            success = await adapter.send_message(lead.profile_url, pending_msg.content)
-            if success:
+            send_result = await adapter.send_message(lead.profile_url, pending_msg.content)
+            # send_message returns dict {"success": bool, "failure_code": str|None}
+            if isinstance(send_result, dict):
+                send_ok = send_result.get("success", False)
+                failure_code = send_result.get("failure_code")
+            else:
+                send_ok = bool(send_result)
+                failure_code = None
+            if send_ok:
                 lead.status = LeadStatus.messaged
             else:
                 lead.status = LeadStatus.failed
+                logger.warning("Review approve: send failed for lead %d (code=%s)", lead.id, failure_code)
             await db.commit()
         except Exception as e:
             logger.error("Review approve: send failed for lead %d: %s", lead.id, e)
@@ -477,6 +492,6 @@ async def review_lead_message(
         finally:
             await adapter.close()
 
-        return {"message": "已批准并发送", "lead_id": lead.id}
+        return {"message": "已批准并发送" if lead.status == LeadStatus.messaged else "发送失败", "lead_id": lead.id}
 
     raise HTTPException(status_code=400, detail="action 必须为 approve 或 reject")

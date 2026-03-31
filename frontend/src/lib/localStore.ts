@@ -89,22 +89,40 @@ export const personaStore = {
     return true;
   },
 
-  /** Replace local store with backend data (full sync) */
+  /** Full replace — use when backend is the source of truth */
   replaceFromBackend(backendList: LocalPersona[]): void {
     if (backendList.length > 0) {
       writeList(backendList);
     }
   },
 
-  /** Merge backend data into local (add missing, don't overwrite local edits) */
+  /** Upsert a single backend persona into local store (by ID) */
+  upsertFromBackend(persona: LocalPersona): void {
+    const list = readList();
+    const idx = list.findIndex(p => p.id === persona.id);
+    if (idx >= 0) {
+      list[idx] = persona;
+    } else {
+      list.push(persona);
+    }
+    writeList(list);
+  },
+
+  /** Merge backend data into local (add missing by ID and name, update existing by ID) */
   mergeFromBackend(backendList: LocalPersona[]): void {
     const local = readList();
     const localIds = new Set(local.map(p => p.id));
     const localKeys = new Set(local.map(p => `${p.name}|${p.company_name}`));
     let changed = false;
     for (const bp of backendList) {
-      if (!localIds.has(bp.id) && !localKeys.has(`${bp.name}|${bp.company_name}`)) {
+      const existIdx = local.findIndex(p => p.id === bp.id);
+      if (existIdx >= 0) {
+        // Update existing
+        local[existIdx] = bp;
+        changed = true;
+      } else if (!localKeys.has(`${bp.name}|${bp.company_name}`)) {
         local.push(bp);
+        localKeys.add(`${bp.name}|${bp.company_name}`);
         changed = true;
       }
     }

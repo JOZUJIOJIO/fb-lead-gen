@@ -25,8 +25,9 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth_token');
-        // Redirect to login if not already there
-        if (!window.location.pathname.match(/^\/?$/)) {
+        // Redirect to login — but avoid loops on root/setup pages
+        const path = window.location.pathname;
+        if (path !== '/' && path !== '/setup') {
           window.location.href = '/';
         }
       }

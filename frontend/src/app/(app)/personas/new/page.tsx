@@ -83,14 +83,15 @@ ${conversationRules || '[对话规则]'}`;
       is_default: false,
     };
 
-    // 1. Save to localStorage FIRST (guaranteed to persist)
-    personaStore.create(payload);
-
-    // 2. Background sync to backend API
+    // Try backend first — its auto-increment ID is the canonical ID
     try {
-      await personaApi.create(payload);
+      const res = await personaApi.create(payload);
+      if (res.data) {
+        personaStore.upsertFromBackend(res.data);
+      }
     } catch {
-      // Backend sync failed — data safe in localStorage
+      // Backend failed — save to localStorage with local ID as fallback
+      personaStore.create(payload);
     }
 
     setIsSubmitting(false);

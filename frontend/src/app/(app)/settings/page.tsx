@@ -11,8 +11,6 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [proxy, setProxy] = useState('');
-  const [sendIntervalMin, setSendIntervalMin] = useState(60);
-  const [sendIntervalMax, setSendIntervalMax] = useState(180);
   const [maxDailyMessages, setMaxDailyMessages] = useState(50);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -35,8 +33,6 @@ export default function SettingsPage() {
       setAiProvider(s.ai_provider);
       setApiBaseUrl(s.openai_base_url || '');
       setProxy(s.proxy_server || '');
-      setSendIntervalMin(s.send_interval_min);
-      setSendIntervalMax(s.send_interval_max);
       setMaxDailyMessages(s.max_daily_messages);
     } catch {}
   }
@@ -54,8 +50,6 @@ export default function SettingsPage() {
       const payload: Record<string, unknown> = {
         ai_provider: aiProvider,
         proxy_server: proxy,
-        send_interval_min: sendIntervalMin,
-        send_interval_max: sendIntervalMax,
         max_daily_messages: maxDailyMessages,
       };
       if (apiKey) {
@@ -281,29 +275,9 @@ export default function SettingsPage() {
         <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-[#1d1d1f]">发送参数</h2>
           <div className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">发送间隔 (秒)</label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min={10}
-                  max={600}
-                  value={sendIntervalMin}
-                  onChange={(e) => setSendIntervalMin(Number(e.target.value))}
-                  className="w-24 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-                />
-                <span className="text-sm text-[#86868b]">至</span>
-                <input
-                  type="number"
-                  min={10}
-                  max={600}
-                  value={sendIntervalMax}
-                  onChange={(e) => setSendIntervalMax(Number(e.target.value))}
-                  className="w-24 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-                />
-                <span className="text-sm text-[#86868b]">秒</span>
-              </div>
-              <p className="mt-1 text-xs text-[#86868b]">每条消息之间的随机等待时间范围</p>
+            <div className="rounded-xl bg-[#f5f5f7] p-4 text-sm text-[#424245]">
+              <p>发送频率（每小时最多打招呼人数）在每个任务中单独配置。</p>
+              <p className="mt-1 text-xs text-[#86868b]">创建或编辑任务时可以设定「每小时最多打招呼」数量，消息会随机分散在每小时内发送。</p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">每日最大发送量</label>
