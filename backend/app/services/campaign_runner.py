@@ -373,6 +373,12 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                     except Exception as e:
                         logger.error("Campaign %d: greeting generation failed for %s: %s", campaign_id, target_name, e)
                         lead.status = LeadStatus.failed
+                        profile_meta = lead.raw_profile_data or {}
+                        if isinstance(profile_meta, dict):
+                            profile_meta["failure_code"] = "greeting_generation_failed"
+                            profile_meta["failure_step"] = "generate_greeting"
+                            profile_meta["failure_detail"] = str(e)[:200]
+                        lead.raw_profile_data = profile_meta
                         await session.commit()
                         continue
 
@@ -395,8 +401,17 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                         session.add(msg)
                         logger.info("Campaign %d: queued message for review — %s", campaign_id, target_name)
                     else:
-                        success = await adapter.send_message(profile_url, greeting)
-                        if success:
+                        send_result = await adapter.send_message(profile_url, greeting)
+                        # send_message returns dict {"success": bool, "failure_code": str|None}
+                        # or legacy bool for backward compat
+                        if isinstance(send_result, dict):
+                            send_ok = send_result.get("success", False)
+                            failure_code = send_result.get("failure_code")
+                        else:
+                            send_ok = bool(send_result)
+                            failure_code = "send_returned_false" if not send_ok else None
+
+                        if send_ok:
                             lead.status = LeadStatus.messaged
                             msg = Message(
                                 lead_id=lead.id,
@@ -407,6 +422,13 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                             session.add(msg)
                             sent_in_session += 1
                         else:
+                            # Record structured failure reason
+                            profile_meta = lead.raw_profile_data or {}
+                            if isinstance(profile_meta, dict):
+                                profile_meta["failure_code"] = failure_code
+                                profile_meta["failure_step"] = "send_message"
+                            lead.raw_profile_data = profile_meta
+
                             # Check if send failure is due to login expiry
                             login_still_ok = await _verify_facebook_login(adapter)
                             if not login_still_ok:
@@ -419,6 +441,10 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                                 await session.commit()
                                 break
                             lead.status = LeadStatus.failed
+                            logger.warning(
+                                "Campaign %d: send failed for %s (code=%s)",
+                                campaign_id, target_name, failure_code,
+                            )
 
                     await session.commit()
 
@@ -428,6 +454,15 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                         campaign_id, target_name, e,
                     )
                     lead.status = LeadStatus.failed
+                    try:
+                        profile_meta = lead.raw_profile_data or {}
+                        if isinstance(profile_meta, dict):
+                            profile_meta["failure_code"] = "processing_exception"
+                            profile_meta["failure_step"] = "process_lead"
+                            profile_meta["failure_detail"] = str(e)[:200]
+                        lead.raw_profile_data = profile_meta
+                    except Exception:
+                        pass
                     await session.commit()
 
                 # 4f. Update progress

@@ -375,8 +375,46 @@ class FacebookAdapter(PlatformAdapter):
 
     # -- Messaging -----------------------------------------------------------
 
-    async def send_message(self, profile_url: str, message: str) -> bool:
-        """Send a direct message to a Facebook user."""
+    # Wide selector lists for Facebook's many UI variants
+    _MSG_BTN_SELECTORS = [
+        # Profile page button (en / zh)
+        'div[aria-label="Message"]',
+        'div[aria-label="发消息"]',
+        'a[aria-label="Message"]',
+        'a[aria-label="发消息"]',
+        # Role-based
+        'div[role="button"]:has-text("Message")',
+        'div[role="button"]:has-text("发消息")',
+        # Link-based (some profiles)
+        'a[href*="/messages/t/"]',
+        'a[href*="messenger.com"]',
+    ]
+
+    _INPUT_SELECTORS = [
+        # Chat popup / overlay
+        'div[role="textbox"][contenteditable="true"]',
+        # Aria-label variants (en / zh, case insensitive via multiple entries)
+        'div[aria-label*="message" i][contenteditable="true"]',
+        'div[aria-label*="消息"][contenteditable="true"]',
+        'div[aria-label*="Aa"][contenteditable="true"]',
+        # Messenger full page
+        'div[data-lexical-editor="true"][contenteditable="true"]',
+        # Generic contenteditable inside chat containers
+        'div[role="main"] div[contenteditable="true"]',
+        # Paragraph-based editor (new Facebook)
+        'p[data-lexical-text="true"]',
+    ]
+
+    async def send_message(self, profile_url: str, message: str) -> dict:
+        """Send a direct message to a Facebook user.
+
+        Returns a dict: {"success": bool, "failure_code": str|None}
+        Failure codes:
+          - message_button_not_found
+          - message_input_not_found
+          - message_send_not_confirmed
+          - send_exception
+        """
         if not self._page:
             raise RuntimeError("Adapter not initialized. Call initialize() first.")
 
@@ -387,33 +425,44 @@ class FacebookAdapter(PlatformAdapter):
             await _random_delay(3, 5)
             await _random_mouse_move(page)
 
-            message_btn = await page.query_selector(
-                'div[aria-label="Message"], '
-                'div[aria-label="发消息"], '
-                'a[aria-label="Message"], '
-                'a[aria-label="发消息"], '
-                'div[role="button"]:has-text("Message"), '
-                'div[role="button"]:has-text("发消息")'
-            )
+            # ---- Step 1: Find and click Message button ----
+            message_btn = None
+            for sel in self._MSG_BTN_SELECTORS:
+                message_btn = await page.query_selector(sel)
+                if message_btn:
+                    break
+
             if not message_btn:
                 logger.error("send_message: Message button not found on %s", profile_url)
                 await _save_screenshot(page, "no_message_btn")
-                return False
+                return {"success": False, "failure_code": "message_button_not_found"}
 
             await message_btn.click()
             await _random_delay(2, 4)
 
-            msg_input = await page.wait_for_selector(
-                'div[role="textbox"][contenteditable="true"], '
-                'div[aria-label*="message" i][contenteditable="true"], '
-                'div[aria-label*="消息"][contenteditable="true"]',
-                timeout=10000,
-            )
-            if not msg_input:
-                logger.error("send_message: Message input not found")
-                await _save_screenshot(page, "no_msg_input")
-                return False
+            # ---- Step 2: Find message input ----
+            msg_input = await self._find_message_input(page)
 
+            # Retry once: maybe a Messenger redirect happened
+            if not msg_input:
+                await _random_delay(2, 3)
+                msg_input = await self._find_message_input(page)
+
+            # Fallback: try navigating to Messenger directly
+            if not msg_input:
+                messenger_url = await self._get_messenger_url(page, profile_url)
+                if messenger_url:
+                    logger.info("send_message: falling back to Messenger URL %s", messenger_url)
+                    await page.goto(messenger_url, wait_until="domcontentloaded", timeout=30000)
+                    await _random_delay(3, 5)
+                    msg_input = await self._find_message_input(page)
+
+            if not msg_input:
+                logger.error("send_message: Message input not found after retries for %s", profile_url)
+                await _save_screenshot(page, "no_msg_input")
+                return {"success": False, "failure_code": "message_input_not_found"}
+
+            # ---- Step 3: Type and send ----
             await msg_input.click()
             await _random_delay(0.5, 1.0)
             for char in message:
@@ -422,16 +471,60 @@ class FacebookAdapter(PlatformAdapter):
 
             await _random_delay(1, 2)
 
+            # Try Enter key, then fall back to clicking Send button
             await page.keyboard.press("Enter")
             await _random_delay(2, 3)
 
             logger.info("send_message: message sent to %s (%d chars)", profile_url, len(message))
-            return True
+            return {"success": True, "failure_code": None}
 
         except Exception as e:
             logger.error("send_message failed for %s: %s", profile_url, e)
             await _save_screenshot(page, "send_error")
-            return False
+            return {"success": False, "failure_code": "send_exception"}
+
+    async def _find_message_input(self, page: Page):
+        """Search for the message input across the main page and any iframes."""
+        combined = ", ".join(self._INPUT_SELECTORS)
+
+        # Try main page first
+        try:
+            el = await page.wait_for_selector(combined, timeout=6000)
+            if el:
+                return el
+        except Exception:
+            pass
+
+        # Try each selector individually (some complex selectors may not combine well)
+        for sel in self._INPUT_SELECTORS:
+            el = await page.query_selector(sel)
+            if el:
+                return el
+
+        # Try inside iframes (Messenger popup can be in a frame)
+        for frame in page.frames:
+            if frame == page.main_frame:
+                continue
+            try:
+                el = await frame.query_selector(combined)
+                if el:
+                    return el
+            except Exception:
+                continue
+
+        return None
+
+    async def _get_messenger_url(self, page: Page, profile_url: str) -> str | None:
+        """Try to construct a Messenger URL from the profile."""
+        # Extract user ID or username from profile URL
+        if "profile.php?id=" in profile_url:
+            uid = profile_url.split("id=")[1].split("&")[0]
+        else:
+            uid = profile_url.rstrip("/").split("/")[-1]
+
+        if uid:
+            return f"https://www.facebook.com/messages/t/{uid}"
+        return None
 
     # -- Cleanup -------------------------------------------------------------
 
