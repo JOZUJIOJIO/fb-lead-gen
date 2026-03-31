@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Facebook, Twitter, Instagram, Search, UserCircle, Send } from 'lucide-react';
 import Link from 'next/link';
 import { campaignApi, personaApi } from '@/lib/api';
-import { personaStore } from '@/lib/localStore';
 
 const platforms = [
   { id: 'facebook', name: 'Facebook', icon: Facebook, enabled: true },
@@ -37,17 +36,19 @@ export default function NewCampaignPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Load from localStorage first (instant, always available)
-    const local = personaStore.list() as PersonaOption[];
-    if (local.length > 0) setPersonas(local);
-    // Background sync from backend
+    // Load personas from backend API (backend always has built-in defaults)
     personaApi.list()
       .then(res => {
-        if (Array.isArray(res.data) && res.data.length > 0) {
+        if (Array.isArray(res.data)) {
           setPersonas(res.data);
+          // Auto-select the default persona if none selected
+          if (!personaId) {
+            const defaultP = res.data.find((p: PersonaOption & { is_default?: boolean }) => p.is_default);
+            if (defaultP) setPersonaId(String(defaultP.id));
+          }
         }
       })
-      .catch(() => {});
+      .catch(err => console.error('Failed to load personas:', err));
   }, []);
 
   const handleSubmit = async () => {
