@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Campaigns from './pages/Campaigns';
+import NewCampaign from './pages/NewCampaign';
 import CampaignDetail from './pages/CampaignDetail';
 import Leads from './pages/Leads';
 import Personas from './pages/Personas';
@@ -16,6 +17,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/campaigns/new" element={<NewCampaign />} />
             <Route path="/campaigns/:id" element={<CampaignDetail />} />
             <Route path="/leads" element={<Leads />} />
             <Route path="/personas" element={<Personas />} />

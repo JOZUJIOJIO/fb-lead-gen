@@ -244,6 +244,39 @@ async def get_campaign(
     )
 
 
+@router.put("/{campaign_id}", response_model=CampaignResponse)
+async def update_campaign(
+    campaign_id: int,
+    body: CampaignCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id)
+    )
+    campaign = result.scalar_one_or_none()
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if campaign.status == CampaignStatus.running:
+        raise HTTPException(status_code=400, detail="运行中的任务无法编辑，请先暂停")
+
+    campaign.name = body.name or body.search_keywords
+    campaign.platform = PlatformEnum(body.platform)
+    campaign.search_keywords = body.search_keywords
+    campaign.search_region = body.search_region
+    campaign.search_industry = body.search_industry
+    campaign.persona_id = body.persona_id
+    campaign.send_limit = body.send_limit
+    campaign.review_mode = body.review_mode
+    campaign.send_hour_start = body.send_hour_start
+    campaign.send_hour_end = body.send_hour_end
+    campaign.timezone = body.timezone
+
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign
+
+
 @router.post("/{campaign_id}/start")
 async def start_campaign(
     campaign_id: int,

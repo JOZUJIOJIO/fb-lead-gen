@@ -153,19 +153,51 @@ export default function NewCampaignPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">地区</label>
+                <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">国家/地区</label>
                 <select
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
                   className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
                 >
-                  <option value="">全部地区</option>
-                  <option value="us">美国</option>
-                  <option value="uk">英国</option>
-                  <option value="eu">欧洲</option>
-                  <option value="sea">东南亚</option>
-                  <option value="me">中东</option>
-                  <option value="global">全球</option>
+                  <option value="">全部国家/地区</option>
+                  <option value="United States">美国</option>
+                  <option value="Canada">加拿大</option>
+                  <option value="Mexico">墨西哥</option>
+                  <option value="United Kingdom">英国</option>
+                  <option value="Germany">德国</option>
+                  <option value="France">法国</option>
+                  <option value="Italy">意大利</option>
+                  <option value="Spain">西班牙</option>
+                  <option value="Netherlands">荷兰</option>
+                  <option value="Poland">波兰</option>
+                  <option value="Sweden">瑞典</option>
+                  <option value="Switzerland">瑞士</option>
+                  <option value="Turkey">土耳其</option>
+                  <option value="Russia">俄罗斯</option>
+                  <option value="Japan">日本</option>
+                  <option value="South Korea">韩国</option>
+                  <option value="India">印度</option>
+                  <option value="Thailand">泰国</option>
+                  <option value="Vietnam">越南</option>
+                  <option value="Philippines">菲律宾</option>
+                  <option value="Indonesia">印度尼西亚</option>
+                  <option value="Malaysia">马来西亚</option>
+                  <option value="Singapore">新加坡</option>
+                  <option value="Australia">澳大利亚</option>
+                  <option value="New Zealand">新西兰</option>
+                  <option value="Pakistan">巴基斯坦</option>
+                  <option value="Bangladesh">孟加拉国</option>
+                  <option value="Saudi Arabia">沙特阿拉伯</option>
+                  <option value="United Arab Emirates">阿联酋</option>
+                  <option value="Israel">以色列</option>
+                  <option value="Egypt">埃及</option>
+                  <option value="Brazil">巴西</option>
+                  <option value="Argentina">阿根廷</option>
+                  <option value="Colombia">哥伦比亚</option>
+                  <option value="Chile">智利</option>
+                  <option value="South Africa">南非</option>
+                  <option value="Nigeria">尼日利亚</option>
+                  <option value="Kenya">肯尼亚</option>
                 </select>
               </div>
               <div>

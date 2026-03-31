@@ -199,6 +199,31 @@ async def update_persona(persona_id: int, **fields) -> Optional[dict]:
     return _row_to_dict(row)
 
 
+@server.method("delete_persona")
+async def delete_persona(persona_id: int) -> dict:
+    deleted = await _db.delete_persona(persona_id)
+    return {"ok": deleted, "persona_id": persona_id}
+
+
+@server.method("update_campaign")
+async def update_campaign(campaign_id: int, **fields) -> Optional[dict]:
+    await _db.update_campaign(campaign_id, **fields)
+    row = await _db.get_campaign(campaign_id)
+    return _row_to_dict(row)
+
+
+@server.method("delete_campaign")
+async def delete_campaign(campaign_id: int) -> dict:
+    # Stop if running
+    from services.campaign_runner import stop_campaign
+    try:
+        await stop_campaign(campaign_id, _db)
+    except Exception:
+        pass
+    await _db.update_campaign(campaign_id, status="deleted")
+    return {"ok": True, "campaign_id": campaign_id}
+
+
 # ---------------------------------------------------------------------------
 # Settings methods
 # ---------------------------------------------------------------------------

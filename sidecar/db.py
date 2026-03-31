@@ -355,6 +355,13 @@ class Database:
         )
         await self._conn.commit()
 
+    async def delete_persona(self, persona_id: int) -> bool:
+        cursor = await self._conn.execute(
+            "DELETE FROM personas WHERE id = ?", (persona_id,)
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
     # -------------------------------------------------------------------------
     # Settings
     # -------------------------------------------------------------------------

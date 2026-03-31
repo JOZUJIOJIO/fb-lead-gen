@@ -15,6 +15,10 @@ export const campaignApi = {
   get: (id: number) => callSidecar('get_campaign', { campaign_id: id }),
   create: (data: Record<string, unknown>) =>
     callSidecar('create_campaign', data),
+  update: (id: number, data: Record<string, unknown>) =>
+    callSidecar('update_campaign', { campaign_id: id, ...data }),
+  delete: (id: number) =>
+    callSidecar('delete_campaign', { campaign_id: id }),
   start: (id: number) => callSidecar('start_campaign', { campaign_id: id }),
   pause: (id: number) => callSidecar('pause_campaign', { campaign_id: id }),
   stop: (id: number) => callSidecar('stop_campaign', { campaign_id: id }),
@@ -35,6 +39,8 @@ export const personaApi = {
     callSidecar('create_persona', data),
   update: (id: number, data: Record<string, unknown>) =>
     callSidecar('update_persona', { persona_id: id, ...data }),
+  delete: (id: number) =>
+    callSidecar('delete_persona', { persona_id: id }),
 };
 
 export const settingsApi = {

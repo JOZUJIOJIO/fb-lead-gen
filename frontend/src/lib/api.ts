@@ -43,6 +43,7 @@ export const campaignApi = {
   list: () => api.get('/api/campaigns'),
   get: (id: string) => api.get(`/api/campaigns/${id}`),
   create: (data: Record<string, unknown>) => api.post('/api/campaigns', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/api/campaigns/${id}`, data),
   delete: (id: string) => api.delete(`/api/campaigns/${id}`),
   start: (id: string) => api.post(`/api/campaigns/${id}/start`),
   pause: (id: string) => api.post(`/api/campaigns/${id}/pause`),
