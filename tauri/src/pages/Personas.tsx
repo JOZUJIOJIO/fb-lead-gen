@@ -3,6 +3,7 @@ import {
   Plus, ArrowLeft, Save, Trash2, X, Building2, User, Palette,
 } from 'lucide-react';
 import { personaApi } from '../lib/ipc';
+import { personaStore, type LocalPersona } from '../lib/localStore';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -122,17 +123,23 @@ export default function Personas() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  /* ---- Data loading ---- */
-  const loadPersonas = async () => {
-    try {
-      const data = await personaApi.list();
-      const list = data as PersonaRow[];
-      if (Array.isArray(list)) setPersonas(list);
-    } catch {
-      // sidecar unavailable
-    } finally {
-      setLoading(false);
-    }
+  /* ---- Data loading: localStorage = primary, sidecar = background sync ---- */
+  const loadPersonas = () => {
+    // Always load from localStorage first (instant, survives any restart)
+    const local = personaStore.list();
+    setPersonas(local as unknown as PersonaRow[]);
+    setLoading(false);
+
+    // Background: try merging sidecar data into localStorage
+    personaApi.list()
+      .then((data: unknown) => {
+        const sidecarList = data as LocalPersona[];
+        if (Array.isArray(sidecarList) && sidecarList.length > 0) {
+          personaStore.mergeFromSidecar(sidecarList);
+          setPersonas(personaStore.list() as unknown as PersonaRow[]);
+        }
+      })
+      .catch(() => { /* sidecar unavailable — localStorage data still shown */ });
   };
 
   useEffect(() => { loadPersonas(); }, []);
@@ -157,48 +164,55 @@ export default function Personas() {
     setView('form');
   };
 
-  const openEdit = async (id: number) => {
-    try {
-      const data = await personaApi.get(id) as PersonaRow | null;
-      if (!data) { setError('人设不存在'); return; }
-      setEditingId(id);
-      setForm(rowToForm(data));
-      setError('');
-      setView('form');
-    } catch {
-      setError('加载人设失败');
-    }
+  const openEdit = (id: number) => {
+    // Load from localStorage (always available)
+    const data = personaStore.get(id);
+    if (!data) { setError('人设不存在'); return; }
+    setEditingId(id);
+    setForm(rowToForm(data as unknown as PersonaRow));
+    setError('');
+    setView('form');
   };
 
   const handleSave = async () => {
     if (!form.name.trim()) { setError('请输入人设名称'); return; }
     setSaving(true);
     setError('');
+
+    const payload = formToPayload(form);
+
+    // 1. Save to localStorage FIRST (guaranteed to persist)
+    if (editingId) {
+      personaStore.update(editingId, payload);
+    } else {
+      personaStore.create(payload);
+    }
+
+    // 2. Update UI immediately from localStorage
+    setPersonas(personaStore.list() as unknown as PersonaRow[]);
+    setView('list');
+    setSaving(false);
+
+    // 3. Background sync to sidecar (best-effort)
     try {
-      const payload = formToPayload(form);
       if (editingId) {
         await personaApi.update(editingId, payload);
       } else {
         await personaApi.create(payload);
       }
-      await loadPersonas();
-      setView('list');
     } catch {
-      setError('保存失败，请重试');
-    } finally {
-      setSaving(false);
+      // Sidecar sync failed — data is safe in localStorage
     }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm('确定删除该人设？')) return;
-    try {
-      await personaApi.delete(id);
-      setPersonas(prev => prev.filter(p => p.id !== id));
-      if (editingId === id) setView('list');
-    } catch {
-      setError('删除失败');
-    }
+    // 1. Delete from localStorage first
+    personaStore.delete(id);
+    setPersonas(personaStore.list() as unknown as PersonaRow[]);
+    if (editingId === id) setView('list');
+    // 2. Background sync to sidecar
+    try { await personaApi.delete(id); } catch { /* ignore */ }
   };
 
   /* ============================================================== */

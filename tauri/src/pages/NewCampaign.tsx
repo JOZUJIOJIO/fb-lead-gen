@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Globe, MessageCircle, Camera, Search, UserCircle, Send } from 'lucide-react';
 import { campaignApi, personaApi } from '../lib/ipc';
+import { campaignStore, personaStore } from '../lib/localStore';
 
 const platforms = [
   { id: 'facebook', name: 'Facebook', icon: Globe, enabled: true },
@@ -78,10 +79,16 @@ export default function NewCampaign() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Load personas from localStorage (instant)
+    const local = personaStore.list() as unknown as PersonaOption[];
+    setPersonas(local);
+    // Background merge from sidecar
     personaApi.list()
       .then((data: unknown) => {
         const list = data as PersonaOption[];
-        if (Array.isArray(list)) setPersonas(list);
+        if (Array.isArray(list) && list.length > 0) {
+          setPersonas(list);
+        }
       })
       .catch(() => {});
   }, []);
@@ -89,6 +96,20 @@ export default function NewCampaign() {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setError('');
+
+    // 1. Save to localStorage FIRST (guaranteed)
+    campaignStore.create({
+      name: campaignName,
+      platform,
+      search_keywords: keywords,
+      search_region: region,
+      search_industry: industry,
+      persona_id: personaId ? Number(personaId) : null,
+      send_limit: sendLimit,
+      max_per_hour: maxPerHour,
+    });
+
+    // 2. Background sync to sidecar
     try {
       await campaignApi.create({
         platform,
@@ -99,12 +120,12 @@ export default function NewCampaign() {
         send_limit: sendLimit,
         max_per_hour: maxPerHour,
       });
-      navigate('/campaigns');
     } catch {
-      setError('创建失败，请重试');
-    } finally {
-      setIsSubmitting(false);
+      // Sidecar sync failed — data safe in localStorage
     }
+
+    setIsSubmitting(false);
+    navigate('/campaigns');
   };
 
   return (

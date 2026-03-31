@@ -3,31 +3,31 @@ import { Link } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { campaignApi } from '../lib/ipc';
+import { campaignStore, type LocalCampaign } from '../lib/localStore';
 
-interface Campaign {
-  id: number;
-  name: string;
-  platform: string;
-  status: string;
-  send_limit: number;
-  progress_current: number;
-  progress_total: number;
-  created_at: string;
-}
+type Campaign = LocalCampaign;
 
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Load from localStorage first (instant)
+    const local = campaignStore.list();
+    setCampaigns(local);
+    setLoading(false);
+
+    // Background sync: update status/progress from sidecar
     campaignApi
       .list()
       .then((data: unknown) => {
-        const list = data as Campaign[];
-        if (Array.isArray(list)) setCampaigns(list);
+        const sidecarList = data as Campaign[];
+        if (Array.isArray(sidecarList) && sidecarList.length > 0) {
+          campaignStore.syncFromSidecar(sidecarList);
+          setCampaigns(campaignStore.list());
+        }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch(() => {});
   }, []);
 
   return (

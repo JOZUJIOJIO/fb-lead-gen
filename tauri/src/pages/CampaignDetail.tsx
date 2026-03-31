@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, StopCircle, Pencil, Save, X } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { campaignApi, personaApi } from '../lib/ipc';
+import { campaignStore, personaStore } from '../lib/localStore';
 
 /* ------------------------------------------------------------------ */
 /* Country list (same as NewCampaign)                                  */
@@ -114,14 +115,18 @@ export default function CampaignDetail() {
 
   const fetchCampaign = async () => {
     if (!id) return;
+    // Load from localStorage first (instant)
+    const local = campaignStore.get(Number(id));
+    if (local) setCampaign(local as unknown as Campaign);
+    setLoading(false);
+    // Background: try sidecar for fresh status/progress
     try {
       const data = await campaignApi.get(Number(id)) as Campaign | null;
-      if (data) setCampaign(data);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
+      if (data) {
+        setCampaign(data);
+        campaignStore.update(Number(id), { status: data.status, progress_current: data.progress_current, progress_total: data.progress_total });
+      }
+    } catch { /* sidecar unavailable */ }
   };
 
   useEffect(() => { fetchCampaign(); }, [id]);
@@ -133,7 +138,7 @@ export default function CampaignDetail() {
     return () => clearInterval(interval);
   }, [campaign?.status]);
 
-  const startEdit = async () => {
+  const startEdit = () => {
     if (!campaign) return;
     setEditKeywords(campaign.search_keywords || '');
     setEditRegion(campaign.search_region || '');
@@ -141,34 +146,34 @@ export default function CampaignDetail() {
     setEditPersonaId(campaign.persona_id ? String(campaign.persona_id) : '');
     setEditSendLimit(campaign.send_limit);
     setEditMaxPerHour(campaign.max_per_hour || 10);
-    // Load personas for dropdown
-    try {
-      const data = await personaApi.list();
-      const list = data as PersonaOption[];
-      if (Array.isArray(list)) setPersonas(list);
-    } catch {}
+    // Load personas from localStorage + sidecar
+    const local = personaStore.list() as unknown as PersonaOption[];
+    setPersonas(local);
+    personaApi.list()
+      .then((data: unknown) => { const list = data as PersonaOption[]; if (Array.isArray(list) && list.length > 0) setPersonas(list); })
+      .catch(() => {});
     setEditing(true);
   };
 
   const saveEdit = async () => {
     if (!campaign) return;
     setSaving(true);
-    try {
-      await campaignApi.update(campaign.id, {
-        search_keywords: editKeywords,
-        search_region: editRegion,
-        search_industry: editIndustry,
-        persona_id: editPersonaId ? Number(editPersonaId) : null,
-        send_limit: editSendLimit,
-        max_per_hour: editMaxPerHour,
-      });
-      await fetchCampaign();
-      setEditing(false);
-    } catch {
-      // ignore
-    } finally {
-      setSaving(false);
-    }
+    const updates = {
+      search_keywords: editKeywords,
+      search_region: editRegion,
+      search_industry: editIndustry,
+      persona_id: editPersonaId ? Number(editPersonaId) : null,
+      send_limit: editSendLimit,
+      max_per_hour: editMaxPerHour,
+    };
+    // 1. Save to localStorage first
+    campaignStore.update(campaign.id, updates);
+    const updated = campaignStore.get(campaign.id);
+    if (updated) setCampaign(updated as unknown as Campaign);
+    setEditing(false);
+    setSaving(false);
+    // 2. Background sync to sidecar
+    try { await campaignApi.update(campaign.id, updates); } catch {}
   };
 
   const handleAction = async (action: 'start' | 'pause' | 'stop') => {
