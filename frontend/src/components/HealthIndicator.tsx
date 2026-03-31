@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Activity } from 'lucide-react';
-import api from '@/lib/api';
-import { campaignApi } from '@/lib/api';
+import api, { campaignApi, isAuthError } from '@/lib/api';
 
 type Status = 'checking' | 'ok' | 'warn' | 'error';
 
@@ -59,8 +58,9 @@ export default function HealthIndicator() {
         (s.ai_provider === 'kimi' && s.kimi_api_key_set) ||
         (s.ai_provider === 'openrouter' && s.openrouter_api_key_set);
       next.api = hasKey ? 'ok' : 'warn';
-    } catch {
-      next.api = 'warn';
+    } catch (err) {
+      // 401 means auth expired — interceptor will redirect to login
+      next.api = isAuthError(err) ? 'error' : 'warn';
     }
 
     // 3. Cookie status
@@ -68,8 +68,8 @@ export default function HealthIndicator() {
       const res = await api.get('/api/settings/cookies/status');
       const c = res.data;
       next.cookie = c.imported && c.facebook_count > 0 ? 'ok' : 'warn';
-    } catch {
-      next.cookie = 'warn';
+    } catch (err) {
+      next.cookie = isAuthError(err) ? 'error' : 'warn';
     }
 
     // 4. Running tasks
@@ -81,8 +81,8 @@ export default function HealthIndicator() {
         : 0;
       next.runningCount = running;
       next.tasks = running > 0 ? 'ok' : 'warn';
-    } catch {
-      next.tasks = 'warn';
+    } catch (err) {
+      next.tasks = isAuthError(err) ? 'error' : 'warn';
     }
 
     setHealth(next);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Save, Eye, EyeOff, Cookie, CheckCircle, AlertCircle, Upload } from 'lucide-react';
-import { settingsApi } from '@/lib/api';
+import { settingsApi, isAuthError } from '@/lib/api';
 import api from '@/lib/api';
 
 export default function SettingsPage() {
@@ -88,7 +88,14 @@ export default function SettingsPage() {
         loadCookieStatus();
       }
     } catch (e: unknown) {
-      const msg = e instanceof SyntaxError ? 'JSON 格式错误，请检查复制的内容' : '导入失败';
+      let msg: string;
+      if (e instanceof SyntaxError) {
+        msg = 'JSON 格式错误，请检查复制的内容';
+      } else if (isAuthError(e)) {
+        msg = '当前登录状态已失效，请重新登录后再导入 Cookies';
+      } else {
+        msg = '导入失败，请检查后端服务是否正常运行';
+      }
       setCookieResult({ message: msg, success: false });
     } finally {
       setCookieImporting(false);

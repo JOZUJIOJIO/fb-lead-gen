@@ -25,11 +25,23 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth_token');
+        // Redirect to login if not already there
+        if (!window.location.pathname.match(/^\/?$/)) {
+          window.location.href = '/';
+        }
       }
     }
     return Promise.reject(error);
   }
 );
+
+/** Check if an axios error is a 401 auth failure */
+export function isAuthError(err: unknown): boolean {
+  if (typeof err === 'object' && err !== null && 'response' in err) {
+    return (err as { response?: { status?: number } }).response?.status === 401;
+  }
+  return false;
+}
 
 // Auth APIs
 export const authApi = {
