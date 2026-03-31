@@ -119,21 +119,69 @@ async def _wait_for_daily_limit(session: AsyncSession, campaign_id: int) -> None
 
 
 async def _verify_facebook_login(adapter: FacebookAdapter) -> bool:
-    """Check if Facebook cookies are valid by visiting facebook.com."""
+    """Check if Facebook cookies are valid by visiting facebook.com.
+
+    Uses domcontentloaded instead of load — Facebook's homepage keeps loading
+    background resources indefinitely, so waiting for 'load' frequently times
+    out even when the page is perfectly usable and the user is logged in.
+
+    Login failure is detected by inspecting the URL and page content for
+    concrete login-page signals, NOT by treating a goto timeout as failure.
+    """
     try:
         page = adapter._page
         if page is None:
             return False
-        await page.goto("https://www.facebook.com", timeout=20000)
+
+        # Navigate with domcontentloaded — enough to read URL/title/content
+        try:
+            await page.goto(
+                "https://www.facebook.com",
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+        except Exception as nav_err:
+            # Even if navigation times out, the page may still be usable.
+            # Only bail out if we truly cannot reach the page at all.
+            current_url = page.url or ""
+            if "facebook.com" not in current_url:
+                logger.error("Facebook login verification: cannot reach facebook.com: %s", nav_err)
+                return False
+            logger.warning(
+                "Facebook login verification: navigation didn't fully complete (%s), "
+                "but page URL is %s — continuing with check",
+                nav_err, current_url,
+            )
+
         await asyncio.sleep(2)
-        title = await page.title()
-        url = page.url
-        # If redirected to login page, cookies are invalid
-        if "login" in url.lower() or "login" in title.lower():
+
+        url = (page.url or "").lower()
+        title = (await page.title() or "").lower()
+
+        # Concrete login-page signals
+        login_url_patterns = ["/login", "login.php", "/checkpoint", "recover/initiate"]
+        if any(pat in url for pat in login_url_patterns):
+            logger.warning("Facebook login check: URL indicates login page: %s", url)
             return False
+
+        if any(kw in title for kw in ["log in", "log into", "登录", "登入"]):
+            logger.warning("Facebook login check: title indicates login page: %s", title)
+            return False
+
+        # Extra check: look for the login form in page content
+        try:
+            has_login_form = await page.evaluate(
+                "() => !!(document.querySelector('#email') && document.querySelector('#pass'))"
+            )
+            if has_login_form:
+                logger.warning("Facebook login check: login form detected in page")
+                return False
+        except Exception:
+            pass  # Page might not be ready for JS evaluation; not a login failure
+
         return True
     except Exception as e:
-        logger.error("Facebook login verification failed: %s", e)
+        logger.error("Facebook login verification unexpected error: %s", e)
         return False
 
 
