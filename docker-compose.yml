@@ -35,7 +35,10 @@ services:
       redis:
         condition: service_healthy
     env_file:
-      - backend/.env
+      - path: backend/.env
+        required: false
+      - path: backend/.env.example
+        required: false
     environment:
       DISPLAY: ":99"
     volumes:
