@@ -91,9 +91,9 @@ async def recover_interrupted_campaigns():
     """On startup, reset campaigns stuck in 'running' and leads stuck in 'analyzing'."""
     async with async_session() as session:
         # Reset running campaigns to paused (they lost their asyncio task on restart)
-        from app.models import CampaignStatus, LeadStatus
+        from app.models import Campaign as CampaignModel, CampaignStatus, Lead, LeadStatus
         result = await session.execute(
-            select(Campaign).where(Campaign.status == CampaignStatus.running)
+            select(CampaignModel).where(CampaignModel.status == CampaignStatus.running)
         )
         stuck_campaigns = result.scalars().all()
         for c in stuck_campaigns:
@@ -103,7 +103,6 @@ async def recover_interrupted_campaigns():
             c.status = CampaignStatus.paused
 
         # Reset analyzing leads to found (they were mid-processing when server stopped)
-        from app.models import Lead
         result2 = await session.execute(
             select(Lead).where(Lead.status == LeadStatus.analyzing)
         )
