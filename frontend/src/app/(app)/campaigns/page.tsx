@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, ArrowUpDown } from 'lucide-react';
+import { Plus, Search, ArrowUpDown, Copy } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { campaignApi } from '@/lib/api';
 
@@ -40,12 +40,26 @@ export default function CampaignsPage() {
   const [sortAsc, setSortAsc] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
+  const refreshCampaigns = () => {
     campaignApi.list()
       .then(res => setCampaigns(res.data))
       .catch(err => console.error('Failed to load campaigns:', err))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    refreshCampaigns();
   }, []);
+
+  const handleDuplicate = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    try {
+      await campaignApi.duplicate(id);
+      refreshCampaigns();
+    } catch (err) {
+      console.error('Failed to duplicate campaign:', err);
+    }
+  };
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -136,14 +150,15 @@ export default function CampaignsPage() {
               <th className="px-6 py-3.5 text-left"><SortBtn k="progress" label="进度" /></th>
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">频率</th>
               <th className="px-6 py-3.5 text-left"><SortBtn k="created_at" label="创建时间" /></th>
+              <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e5e5e7]/40">
             {loading && (
-              <tr><td colSpan={6} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td></tr>
+              <tr><td colSpan={7} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-6 py-12 text-center text-sm text-[#86868b]">
+              <tr><td colSpan={7} className="px-6 py-12 text-center text-sm text-[#86868b]">
                 {campaigns.length === 0 ? '暂无任务，点击「新建任务」开始' : '没有匹配的任务'}
               </td></tr>
             )}
@@ -178,6 +193,15 @@ export default function CampaignsPage() {
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-sm text-[#86868b]">{new Date(campaign.created_at).toLocaleDateString('zh-CN')}</span>
+                </td>
+                <td className="px-6 py-4">
+                  <button
+                    onClick={(e) => handleDuplicate(e, campaign.id)}
+                    title="复制任务"
+                    className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-[#f5f5f7] hover:text-[#1d1d1f]"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
                 </td>
               </tr>
             ))}

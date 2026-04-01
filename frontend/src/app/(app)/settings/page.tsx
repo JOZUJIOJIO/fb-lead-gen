@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Eye, EyeOff, Cookie, CheckCircle, AlertCircle, Upload, Zap } from 'lucide-react';
+import { Save, Eye, EyeOff, Cookie, CheckCircle, AlertCircle, Upload, Zap, AlertTriangle } from 'lucide-react';
 import { settingsApi, isAuthError } from '@/lib/api';
 import api from '@/lib/api';
 
@@ -19,7 +19,7 @@ export default function SettingsPage() {
 
   // Cookie state
   const [cookieJson, setCookieJson] = useState('');
-  const [cookieStatus, setCookieStatus] = useState<{imported: boolean; facebook_count: number} | null>(null);
+  const [cookieStatus, setCookieStatus] = useState<{imported: boolean; facebook_count: number; imported_at: string | null} | null>(null);
   const [cookieImporting, setCookieImporting] = useState(false);
   const [cookieResult, setCookieResult] = useState<{message: string; success: boolean; login_verified?: boolean} | null>(null);
 
@@ -118,6 +118,33 @@ export default function SettingsPage() {
               </span>
             )}
           </div>
+
+          {/* Cookie Import Time & Expiry Warning */}
+          {cookieStatus?.imported && cookieStatus.imported_at && (() => {
+            const importedDate = new Date(cookieStatus.imported_at);
+            const daysSince = Math.floor((Date.now() - importedDate.getTime()) / (1000 * 60 * 60 * 24));
+            const formattedDate = importedDate.toLocaleString('zh-CN', {
+              year: 'numeric', month: '2-digit', day: '2-digit',
+              hour: '2-digit', minute: '2-digit',
+            });
+            return (
+              <div className="mb-4 space-y-2">
+                <p className="text-sm text-[#86868b]">导入时间: {formattedDate}</p>
+                {daysSince > 7 && (
+                  <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    <span>Cookies 可能已过期，请立即重新导入</span>
+                  </div>
+                )}
+                {daysSince > 5 && daysSince <= 7 && (
+                  <div className="flex items-center gap-2 rounded-xl bg-yellow-50 px-4 py-3 text-sm text-yellow-700">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    <span>Cookies 已导入 {daysSince} 天，建议重新导入以避免过期</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Instructions */}
           <div className="mb-4 rounded-xl bg-[#f5f5f7] p-4 text-sm text-[#424245] space-y-3">

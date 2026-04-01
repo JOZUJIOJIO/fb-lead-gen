@@ -11,6 +11,7 @@ const statusConfig: Record<string, { label: string; bg: string; text: string; do
   paused: { label: '已暂停', bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
   completed: { label: '已完成', bg: 'bg-blue-50', text: 'text-blue-700' },
   failed: { label: '失败', bg: 'bg-red-50', text: 'text-red-700' },
+  stopped: { label: '已停止', bg: 'bg-gray-100', text: 'text-gray-500' },
   found: { label: '已发现', bg: 'bg-gray-100', text: 'text-gray-600' },
   analyzing: { label: '分析中', bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
   pending_review: { label: '待审核', bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-500' },

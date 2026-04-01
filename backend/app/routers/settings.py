@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -173,6 +174,11 @@ async def import_cookies(
     # Save to file
     COOKIES_FILE.write_text(json.dumps(pw_cookies, ensure_ascii=False, indent=2))
 
+    # Save import timestamp
+    Path("/tmp/leadflow-browser/facebook_cookies_imported_at.txt").write_text(
+        datetime.utcnow().isoformat()
+    )
+
     fb_count = sum(1 for c in pw_cookies if ".facebook.com" in c.get("domain", ""))
 
     # Cookie file saved — browser will load it on next adapter.initialize()
@@ -188,11 +194,14 @@ async def import_cookies(
 @router.get("/cookies/status")
 async def cookies_status(user: User = Depends(get_current_user)):
     """Check if Facebook cookies have been imported."""
+    ts_file = Path("/tmp/leadflow-browser/facebook_cookies_imported_at.txt")
+    imported_at = ts_file.read_text().strip() if ts_file.exists() else None
+
     if COOKIES_FILE.exists():
         cookies = json.loads(COOKIES_FILE.read_text())
         fb_count = sum(1 for c in cookies if ".facebook.com" in c.get("domain", ""))
-        return {"imported": True, "total": len(cookies), "facebook_count": fb_count}
-    return {"imported": False, "total": 0, "facebook_count": 0}
+        return {"imported": True, "total": len(cookies), "facebook_count": fb_count, "imported_at": imported_at}
+    return {"imported": False, "total": 0, "facebook_count": 0, "imported_at": imported_at}
 
 
 @router.post("/test-ai")

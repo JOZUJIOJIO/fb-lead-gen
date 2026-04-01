@@ -34,6 +34,7 @@ class CampaignStatus(str, enum.Enum):
     paused = "paused"
     completed = "completed"
     failed = "failed"
+    stopped = "stopped"
 
 
 class LeadStatus(str, enum.Enum):

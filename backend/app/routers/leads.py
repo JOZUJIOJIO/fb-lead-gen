@@ -178,6 +178,32 @@ async def export_leads_csv(
     )
 
 
+@router.post("/{lead_id}/retry")
+async def retry_lead(
+    lead_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Reset a failed or blacklisted lead back to 'found' so it can be re-processed."""
+    result = await db.execute(select(Lead).where(Lead.id == lead_id))
+    lead = result.scalar_one_or_none()
+    if lead is None:
+        raise HTTPException(status_code=404, detail="线索不存在")
+    if lead.status not in (LeadStatus.failed, LeadStatus.blacklisted):
+        raise HTTPException(status_code=400, detail="只有失败或已屏蔽的线索可以重试")
+
+    # Clear failure-related fields from raw_profile_data
+    if lead.raw_profile_data and isinstance(lead.raw_profile_data, dict):
+        for key in ("failure_code", "failure_step", "failure_detail", "failure_reason"):
+            lead.raw_profile_data.pop(key, None)
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(lead, "raw_profile_data")
+
+    lead.status = LeadStatus.found
+    await db.commit()
+    return {"message": "线索已重置，请重新启动对应任务以重新处理", "lead_id": lead_id, "status": "found"}
+
+
 @router.patch("/{lead_id}/status")
 async def update_lead_status(
     lead_id: int,

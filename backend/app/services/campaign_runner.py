@@ -18,6 +18,18 @@ from app.services.browser_lock import browser_lock
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Real-time progress tracking
+# ---------------------------------------------------------------------------
+
+_campaign_progress: dict[int, dict] = {}
+
+
+def get_campaign_progress(campaign_id: int) -> dict | None:
+    """Return live progress info for a running campaign, or None."""
+    return _campaign_progress.get(campaign_id)
+
+
 # Human-readable failure reason lookup
 _FAILURE_REASONS: dict[str, str] = {
     "message_button_not_found": "目标页面没有找到「发消息」按钮",
@@ -344,7 +356,7 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
             for idx, target in enumerate(targets):
                 # Check if campaign was paused or stopped
                 current_status = await _refresh_campaign_status(session, campaign_id)
-                if current_status in (CampaignStatus.paused, CampaignStatus.failed):
+                if current_status in (CampaignStatus.paused, CampaignStatus.failed, CampaignStatus.stopped):
                     logger.info("Campaign %d: stopped (status=%s)", campaign_id, current_status.value)
                     break
 
@@ -402,6 +414,12 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                     lead.status = LeadStatus.analyzing
                     await session.commit()
 
+                    _campaign_progress[campaign_id] = {
+                        "current_lead_name": target_name,
+                        "current_step": "访问主页提取资料",
+                        "current_index": idx + 1,
+                        "total": len(targets),
+                    }
                     logger.info("Campaign %d: [%s] Step 1/4 — 访问主页提取资料...", campaign_id, target_name)
                     profile_data = await adapter.get_profile(profile_url)
                     logger.info(
@@ -416,6 +434,12 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                     raw_html = profile_data.pop("raw_html", "")
                     ai_analysis = {}
                     if raw_html:
+                        _campaign_progress[campaign_id] = {
+                            "current_lead_name": target_name,
+                            "current_step": "AI分析",
+                            "current_index": idx + 1,
+                            "total": len(targets),
+                        }
                         logger.info("Campaign %d: [%s] Step 2/4 — AI 分析用户资料...", campaign_id, target_name)
                         try:
                             ai_analysis = await analyze_profile(raw_html)
@@ -444,6 +468,12 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                         logger.info("Campaign %d: [%s] 未检测到帖子（可能是页面未完全加载），继续处理", campaign_id, target_name)
 
                     # 4d. Generate personalized greeting
+                    _campaign_progress[campaign_id] = {
+                        "current_lead_name": target_name,
+                        "current_step": "生成问候语",
+                        "current_index": idx + 1,
+                        "total": len(targets),
+                    }
                     logger.info("Campaign %d: [%s] Step 3/4 — AI 生成个性化问候语...", campaign_id, target_name)
                     try:
                         greeting = await generate_greeting(merged_profile, persona_dict)
@@ -468,6 +498,12 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                         await _wait_for_daily_limit(session, campaign_id)
 
                     # 4e. Send message (or queue for review)
+                    _campaign_progress[campaign_id] = {
+                        "current_lead_name": target_name,
+                        "current_step": "发送消息",
+                        "current_index": idx + 1,
+                        "total": len(targets),
+                    }
                     logger.info("Campaign %d: [%s] Step 4/4 — 发送消息...", campaign_id, target_name)
                     if campaign.review_mode:
                         lead.status = LeadStatus.pending_review
@@ -594,6 +630,7 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                     await asyncio.sleep(wait_secs)
 
             # 5. Mark campaign as completed (unless it was paused/stopped)
+            _campaign_progress.pop(campaign_id, None)
             final_status = await _refresh_campaign_status(session, campaign_id)
             if final_status == CampaignStatus.running:
                 campaign.status = CampaignStatus.completed
@@ -606,6 +643,7 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
 
         except Exception as e:
             logger.error("Campaign %d: unhandled error: %s", campaign_id, e)
+            _campaign_progress.pop(campaign_id, None)
             campaign.status = CampaignStatus.failed
             await session.commit()
 

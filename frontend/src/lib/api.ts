@@ -65,12 +65,17 @@ export const campaignApi = {
   pending: (id: string) => api.get(`/api/campaigns/${id}/pending`),
   review: (id: string, lead_id: number, action: string) =>
     api.post(`/api/campaigns/${id}/review`, { lead_id, action }),
+  duplicate: (id: number | string) => api.post(`/api/campaigns/${id}/duplicate`),
+  preflight: (id: number | string) => api.post(`/api/campaigns/${id}/preflight`),
+  progress: (id: number | string) => api.get(`/api/campaigns/${id}/progress`),
+  previewGreeting: (data: Record<string, unknown>) => api.post('/api/campaigns/preview-greeting', data),
 };
 
 // Lead APIs
 export const leadApi = {
   list: (params?: Record<string, string>) => api.get('/api/leads', { params }),
   get: (id: string) => api.get(`/api/leads/${id}`),
+  retry: (id: number | string) => api.post(`/api/leads/${id}/retry`),
 };
 
 // Persona APIs

@@ -1,7 +1,7 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
-import { Search, ChevronDown, ChevronUp, Download, CheckSquare } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Search, ChevronDown, ChevronUp, Download, CheckSquare, RotateCcw } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { leadApi, campaignApi } from '@/lib/api';
 import api from '@/lib/api';
@@ -22,10 +22,25 @@ interface Lead {
   industry: string | null;
   profile_url: string | null;
   created_at: string;
+  raw_profile_data?: { recent_posts?: unknown[] };
 }
 
 interface LeadDetail extends Lead {
   messages?: { id: number; direction: string; content: string; ai_generated: boolean; created_at: string }[];
+}
+
+function getLeadQuality(lead: Lead): { color: string; label: string } {
+  const hasName = !!lead.name;
+  const hasBioOrWork = !!(lead.bio || lead.industry);
+  const hasRecentPosts = (lead.raw_profile_data?.recent_posts?.length ?? 0) > 0;
+
+  if (hasName && hasBioOrWork && hasRecentPosts) {
+    return { color: 'bg-emerald-500', label: '优质线索' };
+  }
+  if (hasName && hasBioOrWork) {
+    return { color: 'bg-amber-400', label: '一般线索' };
+  }
+  return { color: 'bg-gray-300', label: '低质量' };
 }
 
 const statusOptions = [
@@ -56,8 +71,9 @@ export default function LeadsPage() {
   const [batchLoading, setBatchLoading] = useState(false);
   const [campaignFilter, setCampaignFilter] = useState('');
   const [campaigns, setCampaigns] = useState<{id: number; name: string}[]>([]);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
 
-  useEffect(() => {
+  const refreshLeads = useCallback(() => {
     const params: Record<string, string> = {};
     if (search) params.search = search;
     if (statusFilter) params.status = statusFilter;
@@ -69,6 +85,23 @@ export default function LeadsPage() {
       .catch(err => console.error('Failed to load leads:', err))
       .finally(() => setLoading(false));
   }, [search, statusFilter, platformFilter, campaignFilter]);
+
+  useEffect(() => {
+    refreshLeads();
+  }, [refreshLeads]);
+
+  const handleRetry = async (leadId: number) => {
+    setRetryingId(leadId);
+    try {
+      await leadApi.retry(leadId);
+      refreshLeads();
+      setExpandedId(null);
+      setExpandedDetail(null);
+    } catch {
+      alert('重试失败，请检查后端服务');
+    }
+    setRetryingId(null);
+  };
 
   // Load campaign list for filter dropdown
   useEffect(() => {
@@ -258,7 +291,12 @@ export default function LeadsPage() {
                     <input type="checkbox" checked={selectedIds.has(lead.id)} onChange={() => toggleSelect(lead.id)}
                       className="h-4 w-4 rounded border-[#e5e5e7] text-[#0071e3] focus:ring-[#0071e3]" />
                   </td>
-                  <td className="px-6 py-3.5 text-sm font-medium text-[#1d1d1f]">{lead.name || '未知'}</td>
+                  <td className="px-6 py-3.5 text-sm font-medium text-[#1d1d1f]">
+                    <span className="inline-flex items-center gap-2">
+                      <span className={`inline-block h-2 w-2 rounded-full ${getLeadQuality(lead).color}`} title={getLeadQuality(lead).label} />
+                      {lead.name || '未知'}
+                    </span>
+                  </td>
                   <td className="px-6 py-3.5 text-sm text-[#86868b] capitalize">{lead.platform}</td>
                   <td className="px-6 py-3.5"><StatusBadge status={lead.status} /></td>
                   <td className="px-6 py-3.5 text-sm text-[#86868b]">{lead.industry || '-'}</td>
@@ -287,23 +325,48 @@ export default function LeadsPage() {
                             </a>
                           )}
                         </div>
-                        {/* Message History */}
+                        {/* Message History — Chat Bubbles */}
                         <div>
                           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#86868b]">消息记录</h4>
                           {expandedDetail.messages && expandedDetail.messages.length > 0 ? (
-                            <div className="space-y-2">
+                            <div className="max-h-80 overflow-y-auto space-y-3 pr-2">
                               {expandedDetail.messages.map((msg) => (
-                                <div key={msg.id} className={`rounded-xl p-3 text-sm ${msg.direction === 'outbound' ? 'bg-blue-50 text-blue-900' : 'bg-white border border-[#e5e5e7] text-[#1d1d1f]'}`}>
-                                  <div className="mb-1 flex items-center justify-between">
-                                    <span className="text-xs font-medium">{msg.direction === 'outbound' ? 'AI' : '对方'}</span>
-                                    <span className="text-xs text-[#86868b]">{new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                                  <div className={`max-w-[75%] ${msg.direction === 'outbound' ? 'order-1' : ''}`}>
+                                    <div
+                                      className={`rounded-2xl px-4 py-2.5 text-sm ${
+                                        msg.direction === 'outbound'
+                                          ? 'rounded-br-md bg-[#0071e3] text-white'
+                                          : 'rounded-bl-md bg-[#f5f5f7] text-[#1d1d1f]'
+                                      }`}
+                                    >
+                                      {msg.content}
+                                    </div>
+                                    <div className={`mt-1 flex items-center gap-1.5 ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                                      <span className="text-[10px] text-[#86868b]">
+                                        {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                      {msg.ai_generated && (
+                                        <span className="rounded-full bg-[#f0f0f2] px-1.5 py-0.5 text-[10px] font-medium text-[#86868b]">AI 生成</span>
+                                      )}
+                                    </div>
                                   </div>
-                                  <p>{msg.content}</p>
                                 </div>
                               ))}
                             </div>
                           ) : (
                             <p className="text-sm text-[#86868b]">暂无消息记录</p>
+                          )}
+                          {/* Retry button for failed/blacklisted leads */}
+                          {(expandedDetail.status === 'failed' || expandedDetail.status === 'blacklisted') && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRetry(expandedDetail.id); }}
+                              disabled={retryingId === expandedDetail.id}
+                              className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#e5e5e7] bg-white px-4 py-2 text-sm font-medium text-[#1d1d1f] transition-colors hover:bg-[#f5f5f7] disabled:opacity-50"
+                            >
+                              <RotateCcw className={`h-3.5 w-3.5 ${retryingId === expandedDetail.id ? 'animate-spin' : ''}`} />
+                              {retryingId === expandedDetail.id ? '重置中...' : '重试'}
+                            </button>
                           )}
                         </div>
                       </div>

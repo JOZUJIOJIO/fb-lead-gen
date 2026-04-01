@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Fragment } from 'react';
-import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye, RotateCcw, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye, RotateCcw, AlertTriangle, ChevronDown, ChevronUp, Shield, Loader2 } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { campaignApi, leadApi, personaApi } from '@/lib/api';
 
@@ -55,6 +55,11 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   const [expandedLeadId, setExpandedLeadId] = useState<number | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<{id: number; direction: string; content: string; created_at: string}[]>([]);
   const [personaName, setPersonaName] = useState<string>('');
+  const [progressInfo, setProgressInfo] = useState<{current_lead_name?: string; current_step?: string; current_index?: number; total?: number} | null>(null);
+  const [preflightOpen, setPreflightOpen] = useState(false);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [preflightResult, setPreflightResult] = useState<{all_passed: boolean; cookies_valid: boolean; ai_connected: boolean; ai_provider?: string; search_keywords_set: boolean; persona_set: boolean} | null>(null);
+  const [editTimezone, setEditTimezone] = useState('');
 
   const fetchCampaign = useCallback(async () => {
     try {
@@ -108,6 +113,27 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
     return () => clearInterval(interval);
   }, [campaign?.status, fetchCampaign]);
 
+  // Real-time progress polling when running
+  useEffect(() => {
+    if (!campaign || campaign.status !== 'running') {
+      setProgressInfo(null);
+      return;
+    }
+
+    const fetchProgress = async () => {
+      try {
+        const res = await campaignApi.progress(campaign.id);
+        setProgressInfo(res.data);
+      } catch {
+        // ignore progress fetch errors
+      }
+    };
+
+    fetchProgress();
+    const interval = setInterval(fetchProgress, 3000);
+    return () => clearInterval(interval);
+  }, [campaign?.id, campaign?.status]);
+
   const handlePause = async () => {
     if (!campaign) return;
     try {
@@ -135,6 +161,33 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
       setCampaign({ ...campaign, status: 'failed' });
     } catch (error) {
       console.error('Failed to stop campaign:', error);
+    }
+  };
+
+  const handlePreflight = async () => {
+    if (!campaign) return;
+    setPreflightLoading(true);
+    setPreflightOpen(true);
+    setPreflightResult(null);
+    try {
+      const res = await campaignApi.preflight(campaign.id);
+      setPreflightResult(res.data);
+    } catch {
+      setPreflightResult({ all_passed: false, cookies_valid: false, ai_connected: false, search_keywords_set: false, persona_set: false });
+    } finally {
+      setPreflightLoading(false);
+    }
+  };
+
+  const handleConfirmStart = async () => {
+    if (!campaign) return;
+    try {
+      await campaignApi.start(String(campaign.id));
+      setCampaign({ ...campaign, status: 'running' });
+      setPreflightOpen(false);
+      setPreflightResult(null);
+    } catch (error) {
+      console.error('Failed to start campaign:', error);
     }
   };
 
@@ -199,7 +252,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
           </div>
           <div className="flex items-center gap-2">
             {campaign.status === 'draft' && (
-              <button onClick={handleResume} className="inline-flex items-center gap-1.5 rounded-full bg-[#0071e3] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0077ed]">
+              <button onClick={handlePreflight} className="inline-flex items-center gap-1.5 rounded-full bg-[#0071e3] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0077ed]">
                 <Play className="h-4 w-4" />
                 启动
               </button>
@@ -232,8 +285,102 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
         </div>
       </div>
 
+      {/* Pre-Flight Check Modal */}
+      {preflightOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-2">
+              <Shield className="h-5 w-5 text-[#0071e3]" />
+              <h3 className="text-lg font-semibold text-[#1d1d1f]">启动前检查</h3>
+            </div>
+            {preflightLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-[#0071e3]" />
+                <span className="ml-2 text-sm text-[#86868b]">正在检查...</span>
+              </div>
+            ) : preflightResult ? (
+              <>
+                <div className="space-y-3 mb-6">
+                  <div className="flex items-center gap-2.5">
+                    {preflightResult.cookies_valid ? <Check className="h-4.5 w-4.5 text-emerald-600" /> : <X className="h-4.5 w-4.5 text-red-500" />}
+                    <span className="text-sm text-[#1d1d1f]">Cookies 有效</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    {preflightResult.ai_connected ? <Check className="h-4.5 w-4.5 text-emerald-600" /> : <X className="h-4.5 w-4.5 text-red-500" />}
+                    <span className="text-sm text-[#1d1d1f]">AI 连接正常{preflightResult.ai_provider ? ` (${preflightResult.ai_provider})` : ''}</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    {preflightResult.search_keywords_set ? <Check className="h-4.5 w-4.5 text-emerald-600" /> : <X className="h-4.5 w-4.5 text-red-500" />}
+                    <span className="text-sm text-[#1d1d1f]">搜索关键词已设置</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    {preflightResult.persona_set ? <Check className="h-4.5 w-4.5 text-emerald-600" /> : <X className="h-4.5 w-4.5 text-red-500" />}
+                    <span className="text-sm text-[#1d1d1f]">人设已配置</span>
+                  </div>
+                </div>
+                {preflightResult.all_passed ? (
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-2.5 mb-4">
+                    <span className="text-sm font-medium text-emerald-700">全部通过</span>
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-2.5 mb-4">
+                    <span className="text-sm font-medium text-amber-700">部分检查未通过，启动后可能出现问题</span>
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => { setPreflightOpen(false); setPreflightResult(null); }}
+                    className="rounded-full border border-[#e5e5e7] px-4 py-2 text-sm font-medium text-[#1d1d1f] transition-colors hover:bg-[#f5f5f7]"
+                  >
+                    {preflightResult.all_passed ? '取消' : '返回修改'}
+                  </button>
+                  <button
+                    onClick={handleConfirmStart}
+                    className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                      preflightResult.all_passed
+                        ? 'bg-[#0071e3] text-white hover:bg-[#0077ed]'
+                        : 'border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                    }`}
+                  >
+                    {preflightResult.all_passed ? '确认启动' : '仍然启动'}
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* Real-Time Progress */}
+      {campaign.status === 'running' && progressInfo && (
+        <div className="mb-6 rounded-2xl bg-white p-5 border border-[#e5e5e7]/60 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0071e3] opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#0071e3]" />
+            </span>
+            <span className="text-sm font-medium text-[#1d1d1f]">正在处理</span>
+          </div>
+          <p className="text-sm text-[#1d1d1f] mb-3">
+            {progressInfo.current_lead_name || '...'} —{' '}
+            <span className="animate-pulse text-[#0071e3] font-medium">{progressInfo.current_step || '处理中'}</span>
+            {progressInfo.total ? (
+              <span className="ml-2 text-[#86868b]">({progressInfo.current_index || 0}/{progressInfo.total})</span>
+            ) : null}
+          </p>
+          {progressInfo.total ? (
+            <div className="h-1.5 overflow-hidden rounded-full bg-[#f0f0f2]">
+              <div
+                className="h-full rounded-full bg-[#0071e3] transition-all duration-500"
+                style={{ width: `${((progressInfo.current_index || 0) / progressInfo.total) * 100}%` }}
+              />
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {/* Campaign Info */}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
           <p className="text-xs text-[#86868b]">平台</p>
           <p className="mt-1 text-sm font-medium text-[#1d1d1f] capitalize">{campaign.platform}</p>
@@ -253,6 +400,34 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
           <p className="text-xs text-[#86868b]">人设</p>
           <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{personaName || '未设置'}</p>
+        </div>
+        <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
+          <p className="text-xs text-[#86868b]">时区</p>
+          <select
+            value={editTimezone || campaign.timezone || 'Asia/Shanghai'}
+            onChange={async (e) => {
+              const tz = e.target.value;
+              setEditTimezone(tz);
+              try {
+                await campaignApi.update(String(campaign.id), { timezone: tz });
+                setCampaign({ ...campaign, timezone: tz });
+              } catch { /* ignore */ }
+            }}
+            className="mt-1 w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-2 py-1.5 text-xs text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+          >
+            <option value="Asia/Shanghai">中国标准时间 (UTC+8)</option>
+            <option value="Asia/Tokyo">日本标准时间 (UTC+9)</option>
+            <option value="Asia/Singapore">新加坡时间 (UTC+8)</option>
+            <option value="Asia/Dubai">迪拜时间 (UTC+4)</option>
+            <option value="Europe/London">英国时间 (UTC+0)</option>
+            <option value="Europe/Paris">中欧时间 (UTC+1)</option>
+            <option value="Europe/Berlin">德国时间 (UTC+1)</option>
+            <option value="America/New_York">美国东部 (UTC-5)</option>
+            <option value="America/Los_Angeles">美国西部 (UTC-8)</option>
+            <option value="America/Sao_Paulo">巴西时间 (UTC-3)</option>
+            <option value="Australia/Sydney">澳大利亚东部 (UTC+11)</option>
+            <option value="Pacific/Auckland">新西兰时间 (UTC+12)</option>
+          </select>
         </div>
       </div>
 

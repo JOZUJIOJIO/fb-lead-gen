@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Facebook, Twitter, Instagram, Search, UserCircle, Send } from 'lucide-react';
+import { ArrowLeft, Facebook, Twitter, Instagram, Search, UserCircle, Send, Sparkles, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { campaignApi, personaApi } from '@/lib/api';
 
@@ -34,6 +34,9 @@ export default function NewCampaignPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
   const [error, setError] = useState('');
+  const [timezone, setTimezone] = useState('Asia/Shanghai');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewGreeting, setPreviewGreeting] = useState('');
 
   useEffect(() => {
     // Load personas from backend API (backend always has built-in defaults)
@@ -51,6 +54,25 @@ export default function NewCampaignPage() {
       .catch(err => console.error('Failed to load personas:', err));
   }, []);
 
+  const handlePreviewGreeting = async () => {
+    if (!personaId) return;
+    setPreviewLoading(true);
+    setPreviewGreeting('');
+    try {
+      const res = await campaignApi.previewGreeting({
+        persona_id: Number(personaId),
+        target_name: '张三',
+        target_bio: '跨境电商从业者',
+        target_industry: industry || '电商',
+      });
+      setPreviewGreeting(res.data.greeting || res.data.message || JSON.stringify(res.data));
+    } catch {
+      setPreviewGreeting('预览生成失败，请检查人设配置和 AI 连接');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setError('');
@@ -67,6 +89,7 @@ export default function NewCampaignPage() {
         review_mode: reviewMode,
         send_hour_start: sendHourStart,
         send_hour_end: sendHourEnd,
+        timezone,
       });
       router.push('/campaigns');
     } catch (err: unknown) {
@@ -279,6 +302,24 @@ export default function NewCampaignPage() {
             <Link href="/personas/new" className="mt-2 inline-block text-xs text-[#0071e3] hover:underline">
               + 创建新人设
             </Link>
+            <div className="mt-4">
+              <button
+                onClick={handlePreviewGreeting}
+                disabled={!personaId || previewLoading}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#e5e5e7] px-4 py-2 text-sm font-medium text-[#1d1d1f] transition-colors hover:bg-[#f5f5f7] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-[#0071e3]" />}
+                预览 AI 问候语
+              </button>
+            </div>
+            {previewGreeting && (
+              <div className="mt-3 rounded-2xl bg-[#f5f5f7] p-4">
+                <p className="mb-2 text-xs font-medium text-[#86868b]">AI 生成的问候语预览（目标：张三 · 跨境电商从业者）</p>
+                <div className="inline-block max-w-md rounded-2xl rounded-bl-md bg-[#0071e3] px-4 py-3 text-sm text-white shadow-sm">
+                  {previewGreeting}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -368,6 +409,29 @@ export default function NewCampaignPage() {
                   ))}
                 </select>
               </div>
+            </div>
+            {/* Timezone */}
+            <div>
+              <span className="text-sm font-medium text-[#1d1d1f]">时区</span>
+              <p className="text-xs text-[#86868b] mt-0.5 mb-2">发送时间窗口所使用的时区</p>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+              >
+                <option value="Asia/Shanghai">中国标准时间 (UTC+8)</option>
+                <option value="Asia/Tokyo">日本标准时间 (UTC+9)</option>
+                <option value="Asia/Singapore">新加坡时间 (UTC+8)</option>
+                <option value="Asia/Dubai">迪拜时间 (UTC+4)</option>
+                <option value="Europe/London">英国时间 (UTC+0)</option>
+                <option value="Europe/Paris">中欧时间 (UTC+1)</option>
+                <option value="Europe/Berlin">德国时间 (UTC+1)</option>
+                <option value="America/New_York">美国东部 (UTC-5)</option>
+                <option value="America/Los_Angeles">美国西部 (UTC-8)</option>
+                <option value="America/Sao_Paulo">巴西时间 (UTC-3)</option>
+                <option value="Australia/Sydney">澳大利亚东部 (UTC+11)</option>
+                <option value="Pacific/Auckland">新西兰时间 (UTC+12)</option>
+              </select>
             </div>
           </div>
         </div>

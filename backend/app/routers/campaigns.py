@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Campaign, CampaignStatus, Lead, Message, PlatformEnum, User
 from app.services.auth_service import get_current_user
-from app.services.campaign_runner import run_campaign
+from app.services.campaign_runner import run_campaign, get_campaign_progress
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -250,6 +250,38 @@ async def campaign_stats(
             "inbound": c_inbound,
         })
 
+    # Keyword performance stats
+    keyword_stats_map: dict[str, dict] = {}
+    all_campaigns_result = await db.execute(select(Campaign))
+    for c in all_campaigns_result.scalars().all():
+        kw = c.search_keywords or ""
+        if not kw.strip():
+            continue
+        if kw not in keyword_stats_map:
+            keyword_stats_map[kw] = {"keyword": kw, "total_sent": 0, "total_replied": 0}
+        kw_sent = (await db.execute(
+            select(func.count(Lead.id)).where(
+                Lead.campaign_id == c.id,
+                Lead.status.in_([LeadStatus.messaged, LeadStatus.replied, LeadStatus.converted])
+            )
+        )).scalar() or 0
+        kw_replied = (await db.execute(
+            select(func.count(Lead.id)).where(
+                Lead.campaign_id == c.id,
+                Lead.status.in_([LeadStatus.replied, LeadStatus.converted])
+            )
+        )).scalar() or 0
+        keyword_stats_map[kw]["total_sent"] += kw_sent
+        keyword_stats_map[kw]["total_replied"] += kw_replied
+
+    keyword_stats_list = []
+    for kw_data in keyword_stats_map.values():
+        kw_data["reply_rate"] = round(
+            (kw_data["total_replied"] / kw_data["total_sent"] * 100), 1
+        ) if kw_data["total_sent"] > 0 else 0.0
+        keyword_stats_list.append(kw_data)
+    keyword_stats_list.sort(key=lambda x: x["total_sent"], reverse=True)
+
     return {
         "total_campaigns": total_campaigns,
         "active_campaigns": active_campaigns,
@@ -265,7 +297,55 @@ async def campaign_stats(
         "auto_reply_rounds": auto_reply_rounds,
         "reply_rate": reply_rate,
         "campaign_stats": campaign_stats_list,
+        "keyword_stats": keyword_stats_list,
     }
+
+
+# ---------- Preview Greeting (Item 4) ----------
+
+class PreviewGreetingRequest(BaseModel):
+    persona_id: int
+    target_name: str
+    target_bio: str = ""
+    target_industry: str = ""
+
+
+@router.post("/preview-greeting")
+async def preview_greeting(
+    body: PreviewGreetingRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Generate a preview greeting for a persona + mock target profile."""
+    from app.models import Persona
+    from app.services.ai_service import generate_greeting
+
+    result = await db.execute(select(Persona).where(Persona.id == body.persona_id))
+    persona = result.scalar_one_or_none()
+    if persona is None:
+        raise HTTPException(status_code=404, detail="人设不存在")
+
+    persona_dict = {
+        "name": persona.name,
+        "company_name": persona.company_name,
+        "company_description": persona.company_description,
+        "products": persona.products,
+        "salesperson_name": persona.salesperson_name,
+        "salesperson_title": persona.salesperson_title,
+        "tone": persona.tone,
+        "greeting_rules": persona.greeting_rules,
+        "conversation_rules": persona.conversation_rules,
+        "system_prompt": persona.system_prompt,
+    }
+
+    mock_profile = {
+        "name": body.target_name,
+        "bio": body.target_bio,
+        "industry": body.target_industry,
+    }
+
+    greeting = await generate_greeting(mock_profile, persona_dict)
+    return {"greeting": greeting}
 
 
 @router.get("/{campaign_id}", response_model=CampaignDetail)
@@ -432,7 +512,7 @@ async def stop_campaign(
     if campaign is None:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    campaign.status = CampaignStatus.failed
+    campaign.status = CampaignStatus.stopped
     await db.commit()
 
     # Cancel the running task if exists
@@ -562,3 +642,126 @@ async def review_lead_message(
         return {"message": "已批准并发送" if lead.status == LeadStatus.messaged else "发送失败", "lead_id": lead.id}
 
     raise HTTPException(status_code=400, detail="action 必须为 approve 或 reject")
+
+
+# ---------- Campaign Duplicate (Item 5) ----------
+
+@router.post("/{campaign_id}/duplicate", response_model=CampaignResponse, status_code=201)
+async def duplicate_campaign(
+    campaign_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Duplicate a campaign with a new name."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id)
+    )
+    original = result.scalar_one_or_none()
+    if original is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    new_campaign = Campaign(
+        name=(original.name or original.search_keywords or "未命名") + " (副本)",
+        platform=original.platform,
+        search_keywords=original.search_keywords,
+        search_region=original.search_region,
+        search_industry=original.search_industry,
+        persona_id=original.persona_id,
+        send_limit=original.send_limit,
+        max_per_hour=original.max_per_hour,
+        review_mode=original.review_mode,
+        send_hour_start=original.send_hour_start,
+        send_hour_end=original.send_hour_end,
+        timezone=original.timezone,
+        status=CampaignStatus.draft,
+        progress_current=0,
+        progress_total=0,
+    )
+    db.add(new_campaign)
+    await db.commit()
+    await db.refresh(new_campaign)
+    return new_campaign
+
+
+# ---------- Campaign Real-Time Progress (Item 7) ----------
+
+@router.get("/{campaign_id}/progress")
+async def campaign_progress(
+    campaign_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get real-time progress for a running campaign."""
+    progress = get_campaign_progress(campaign_id)
+    if progress is None:
+        return {"running": False}
+    return progress
+
+
+# ---------- Pre-Flight Check (Item 9) ----------
+
+@router.post("/{campaign_id}/preflight")
+async def preflight_check(
+    campaign_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Run pre-flight checks before starting a campaign."""
+    import json
+    from pathlib import Path
+
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id)
+    )
+    campaign = result.scalar_one_or_none()
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    # 1. Check cookies
+    cookies_valid = False
+    cookies_facebook_count = 0
+    cookies_file = Path("/tmp/leadflow-browser/facebook_cookies.json")
+    if cookies_file.exists():
+        try:
+            cookies = json.loads(cookies_file.read_text())
+            cookies_facebook_count = sum(
+                1 for c in cookies if ".facebook.com" in c.get("domain", "")
+            )
+            cookies_valid = cookies_facebook_count > 0
+        except (json.JSONDecodeError, Exception):
+            pass
+
+    # 2. Test AI connection
+    ai_connected = False
+    ai_provider = ""
+    try:
+        from app.services.ai_service import _get_provider_config, _default_model, _call_openai_compatible, _call_anthropic
+        provider, base_url, api_key = _get_provider_config()
+        ai_provider = provider
+        if api_key:
+            model = _default_model(provider)
+            if provider == "anthropic":
+                await _call_anthropic(api_key, model, "You are a test.", "Say OK.")
+            else:
+                await _call_openai_compatible(base_url, api_key, model, "You are a test.", "Say OK.")
+            ai_connected = True
+    except Exception:
+        pass
+
+    # 3. Check search keywords
+    search_keywords_set = bool(campaign.search_keywords and campaign.search_keywords.strip())
+
+    # 4. Check persona
+    persona_set = campaign.persona_id is not None
+
+    all_passed = cookies_valid and ai_connected and search_keywords_set and persona_set
+
+    return {
+        "cookies_valid": cookies_valid,
+        "cookies_facebook_count": cookies_facebook_count,
+        "ai_connected": ai_connected,
+        "ai_provider": ai_provider,
+        "search_keywords_set": search_keywords_set,
+        "persona_set": persona_set,
+        "all_passed": all_passed,
+    }
