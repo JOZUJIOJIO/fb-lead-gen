@@ -327,7 +327,11 @@ class FacebookAdapter(PlatformAdapter):
     # -- Profile -------------------------------------------------------------
 
     async def get_profile(self, profile_url: str) -> dict:
-        """Navigate to a profile and extract structured data."""
+        """Navigate to a profile and extract structured data.
+
+        Uses JS-based extraction scoped to the profile content area,
+        filtering out navigation/sidebar noise (Notifications, etc.).
+        """
         if not self._page:
             raise RuntimeError("Adapter not initialized. Call initialize() first.")
 
@@ -335,70 +339,126 @@ class FacebookAdapter(PlatformAdapter):
         profile_data: dict = {"profile_url": profile_url, "raw_html": ""}
 
         try:
+            # Step 1: Go to the About page
             about_url = profile_url.rstrip("/") + "/about"
             await page.goto(about_url, wait_until="domcontentloaded", timeout=30000)
             await _random_delay(3, 5)
             await _random_mouse_move(page)
             await _human_scroll(page, times=2)
 
-            name_el = await page.query_selector("h1")
-            if name_el:
-                profile_data["name"] = (await name_el.inner_text()).strip()
+            # Step 2: Verify we're on a profile page (not redirected to login/error)
+            current_url = (page.url or "").lower()
+            if "/login" in current_url or "/checkpoint" in current_url:
+                logger.warning("get_profile: redirected away from profile to %s", current_url)
+                return profile_data
 
-            intro_section = await page.query_selector(
-                'div[data-pagelet="ProfileTileCollection"], '
-                'div[data-pagelet="ProfileAppSection_0"]'
-            )
-            if intro_section:
-                profile_data["bio"] = (await intro_section.inner_text()).strip()[:500]
+            # Step 3: Extract profile data using JS — scoped to main content area
+            extracted = await page.evaluate("""() => {
+                const data = { name: '', bio: '', work: '', education: '', location: '' };
 
-            about_items = await page.query_selector_all(
-                'div[data-pagelet*="about"] span, '
-                'div[data-pagelet*="ProfileAppSection"] span'
-            )
-            work_texts: list[str] = []
-            edu_texts: list[str] = []
-            location_text = ""
-            for item in about_items[:50]:
-                try:
-                    text = (await item.inner_text()).strip()
-                    lower = text.lower()
-                    if any(kw in lower for kw in ["works at", "worked at", "在", "工作"]):
-                        work_texts.append(text)
-                    elif any(kw in lower for kw in ["studied at", "goes to", "学习", "毕业"]):
-                        edu_texts.append(text)
-                    elif any(kw in lower for kw in ["lives in", "from", "住在", "来自"]):
-                        location_text = text
-                except Exception:
-                    continue
+                // Navigation noise keywords to filter out
+                const NOISE = ['notifications', 'marketplace', 'gaming', 'watch',
+                    'groups', 'menu', 'messenger', 'facebook', 'search',
+                    '通知', '小组', '游戏', '视频', '搜索', '菜单'];
 
-            profile_data["work"] = "; ".join(work_texts[:3]) if work_texts else ""
-            profile_data["education"] = "; ".join(edu_texts[:3]) if edu_texts else ""
-            profile_data["location"] = location_text
+                function isNoise(text) {
+                    const lower = (text || '').toLowerCase().trim();
+                    if (lower.length < 2 || lower.length > 500) return true;
+                    return NOISE.some(n => lower === n || (lower.length < 20 && lower.includes(n)));
+                }
 
+                // Name: find h1 inside the main profile content area
+                const mainContent = document.querySelector('[role="main"]') || document.body;
+                const h1 = mainContent.querySelector('h1');
+                if (h1) {
+                    data.name = h1.innerText.trim();
+                }
+
+                // Bio/intro: look in profile-specific pagelets
+                const introSelectors = [
+                    '[data-pagelet="ProfileTileCollection"]',
+                    '[data-pagelet="ProfileAppSection_0"]',
+                    '[data-pagelet*="about"]',
+                ];
+                for (const sel of introSelectors) {
+                    const el = mainContent.querySelector(sel);
+                    if (el) {
+                        const text = el.innerText.trim();
+                        if (text && !isNoise(text) && text.length > 5) {
+                            data.bio = text.substring(0, 500);
+                            break;
+                        }
+                    }
+                }
+
+                // Work/education/location: scan spans inside profile sections
+                const profileSections = mainContent.querySelectorAll(
+                    '[data-pagelet*="about"] span, [data-pagelet*="ProfileAppSection"] span'
+                );
+                const workTexts = [];
+                const eduTexts = [];
+                for (const span of Array.from(profileSections).slice(0, 50)) {
+                    const text = span.innerText.trim();
+                    if (!text || isNoise(text)) continue;
+                    const lower = text.toLowerCase();
+                    if (['works at', 'worked at', '工作', '任职'].some(k => lower.includes(k)))
+                        workTexts.push(text);
+                    else if (['studied at', 'goes to', '学习', '毕业', '就读'].some(k => lower.includes(k)))
+                        eduTexts.push(text);
+                    else if (['lives in', 'from', '住在', '来自', '现居'].some(k => lower.includes(k)))
+                        data.location = data.location || text;
+                }
+                data.work = workTexts.slice(0, 3).join('; ');
+                data.education = eduTexts.slice(0, 3).join('; ');
+
+                return data;
+            }""")
+
+            profile_data["name"] = extracted.get("name", "")
+            profile_data["bio"] = extracted.get("bio", "")
+            profile_data["work"] = extracted.get("work", "")
+            profile_data["education"] = extracted.get("education", "")
+            profile_data["location"] = extracted.get("location", "")
+
+            # Step 4: Go to timeline for recent posts
             await page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
             await _random_delay(2, 4)
             await _human_scroll(page, times=3)
 
-            post_elements = await page.query_selector_all(
-                'div[data-pagelet*="ProfileTimeline"] div[dir="auto"], '
-                'div[role="article"] div[dir="auto"]'
-            )
-            recent_posts: list[str] = []
-            for post_el in post_elements[:10]:
-                try:
-                    text = (await post_el.inner_text()).strip()
-                    if len(text) > 20:
-                        recent_posts.append(text[:300])
-                        if len(recent_posts) >= 5:
-                            break
-                except Exception:
-                    continue
-            profile_data["recent_posts"] = recent_posts
+            # Extract posts scoped to main content, filtering noise
+            recent_posts = await page.evaluate("""() => {
+                const NOISE_PATTERNS = /^(notifications|marketplace|gaming|watch|groups|menu|messenger|like|comment|share|reply|通知|小组|菜单|赞|评论|分享|回复)$/i;
+                const main = document.querySelector('[role="main"]') || document.body;
+                const postEls = main.querySelectorAll(
+                    '[data-pagelet*="ProfileTimeline"] div[dir="auto"], ' +
+                    'div[role="article"] div[dir="auto"]'
+                );
+                const posts = [];
+                const seen = new Set();
+                for (const el of postEls) {
+                    const text = el.innerText.trim();
+                    if (text.length < 20 || text.length > 2000) continue;
+                    if (NOISE_PATTERNS.test(text)) continue;
+                    // Dedup by first 50 chars
+                    const key = text.substring(0, 50);
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    posts.push(text.substring(0, 300));
+                    if (posts.length >= 5) break;
+                }
+                return posts;
+            }""")
+            profile_data["recent_posts"] = recent_posts or []
 
             profile_data["raw_html"] = await page.content()
 
-            logger.info("get_profile: extracted profile for '%s'", profile_data.get("name", "unknown"))
+            logger.info(
+                "get_profile: extracted for '%s' — bio=%d chars, work=%s, posts=%d",
+                profile_data.get("name", "unknown"),
+                len(profile_data.get("bio", "")),
+                bool(profile_data.get("work")),
+                len(profile_data.get("recent_posts", [])),
+            )
 
         except Exception as e:
             logger.error("get_profile failed for %s: %s", profile_url, e)
@@ -521,8 +581,12 @@ class FacebookAdapter(PlatformAdapter):
                 return {"success": False, "failure_code": "message_button_not_found"}
 
             logger.info("send_message: navigating to Messenger %s", messenger_url)
-            await page.goto(messenger_url, wait_until="domcontentloaded", timeout=30000)
-            await _random_delay(4, 6)
+            try:
+                await page.goto(messenger_url, wait_until="networkidle", timeout=20000)
+            except Exception:
+                # networkidle may timeout on Messenger — that's OK, page is likely usable
+                logger.debug("send_message: networkidle timeout, continuing anyway")
+            await _random_delay(3, 5)
 
             # ---- Step 2-4: Dismiss dialogs + find input (up to 3 attempts) ----
             msg_input = None
@@ -696,39 +760,93 @@ class FacebookAdapter(PlatformAdapter):
         return None
 
     async def _find_messenger_input(self, page: Page):
-        """Find the message input on the Messenger page (NOT profile page).
+        """Find the message input on the Messenger page.
 
-        Only matches inputs inside the Messenger conversation area,
-        never matches post comment boxes.
+        Uses a multi-strategy approach:
+        1. Wait for any contenteditable textbox to appear
+        2. JS-based smart detection (position + attributes)
+        3. Broad CSS fallbacks
         """
-        # Messenger-specific selectors (narrowest → broadest)
-        messenger_selectors = [
-            # Messenger's own input (aria-label contains message/Aa/消息)
-            'div[aria-label*="message" i][contenteditable="true"][role="textbox"]',
-            'div[aria-label*="消息"][contenteditable="true"][role="textbox"]',
-            'div[aria-label*="Aa"][contenteditable="true"][role="textbox"]',
-            # Lexical editor on Messenger
-            'div[data-lexical-editor="true"][contenteditable="true"][role="textbox"]',
-            # Generic textbox but only inside the main messenger area
-            'div[role="main"] div[role="textbox"][contenteditable="true"]',
-            # Broader fallbacks for newer Messenger layouts
-            'div[contenteditable="true"][role="textbox"]',
-            'div[role="main"] div[contenteditable="true"]',
-        ]
-
-        # First pass: wait for each selector with timeout
-        for sel in messenger_selectors:
-            try:
-                el = await page.wait_for_selector(sel, timeout=4000)
-                if el:
+        # Strategy 1: Wait for the most common Messenger input pattern
+        try:
+            el = await page.wait_for_selector(
+                'div[contenteditable="true"][role="textbox"]',
+                timeout=8000,
+            )
+            if el:
+                # Verify it's in the lower half of the page (message input, not search)
+                is_msg_input = await el.evaluate("""el => {
+                    const rect = el.getBoundingClientRect();
+                    return rect.top > window.innerHeight * 0.3 && rect.width > 80;
+                }""")
+                if is_msg_input:
                     return el
-            except Exception:
-                pass
+        except Exception:
+            pass
 
-        # Second pass: direct query without waiting
-        for sel in messenger_selectors:
+        # Strategy 2: JS-based smart detection — find the right input by context
+        try:
+            handle = await page.evaluate_handle("""() => {
+                // Collect all contenteditable elements
+                const editables = document.querySelectorAll('[contenteditable="true"]');
+                const candidates = [];
+
+                for (const el of editables) {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width < 50 || rect.height < 10) continue; // too small
+                    if (!rect.width || !rect.height) continue; // invisible
+
+                    const role = el.getAttribute('role') || '';
+                    const label = (el.getAttribute('aria-label') || '').toLowerCase();
+                    const isLexical = el.hasAttribute('data-lexical-editor');
+
+                    // Score each candidate
+                    let score = 0;
+                    if (role === 'textbox') score += 30;
+                    if (label.includes('message') || label.includes('消息') || label.includes('aa')) score += 20;
+                    if (isLexical) score += 15;
+                    // Prefer inputs in the lower portion of the viewport
+                    if (rect.top > window.innerHeight * 0.5) score += 25;
+                    else if (rect.top > window.innerHeight * 0.3) score += 10;
+                    // Penalize very tall elements (likely post editors, not chat input)
+                    if (rect.height > 200) score -= 20;
+                    // Bonus for being inside [role="main"]
+                    if (el.closest('[role="main"]')) score += 10;
+                    // Penalize if inside a dialog (could be a popup editor)
+                    if (el.closest('[role="dialog"]')) score -= 15;
+
+                    candidates.push({ el, score, label, role, top: rect.top });
+                }
+
+                // Sort by score descending
+                candidates.sort((a, b) => b.score - a.score);
+
+                if (candidates.length > 0 && candidates[0].score >= 20) {
+                    return candidates[0].el;
+                }
+                return null;
+            }""")
+            if handle:
+                el = handle.as_element()
+                if el:
+                    logger.info("_find_messenger_input: found via JS scoring")
+                    return el
+        except Exception as e:
+            logger.debug("_find_messenger_input JS scoring failed: %s", e)
+
+        # Strategy 3: Broad CSS selectors as last resort
+        fallback_selectors = [
+            'div[aria-label*="message" i][contenteditable="true"]',
+            'div[aria-label*="消息"][contenteditable="true"]',
+            'div[aria-label*="Aa"][contenteditable="true"]',
+            'div[data-lexical-editor="true"][contenteditable="true"]',
+            'div[role="main"] div[contenteditable="true"]',
+            'p[data-lexical-text="true"]',
+        ]
+        for sel in fallback_selectors:
             el = await page.query_selector(sel)
             if el:
+                logger.info("_find_messenger_input: found via fallback selector: %s", sel)
                 return el
 
         return None
