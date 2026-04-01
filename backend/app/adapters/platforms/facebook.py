@@ -142,9 +142,10 @@ class FacebookAdapter(PlatformAdapter):
         if settings.PROXY_SERVER:
             launch_args.append(f"--proxy-server={settings.PROXY_SERVER}")
 
-        # Detect if running in a headless environment (Docker / Xvfb)
+        # Force headless in Docker (/.dockerenv exists) or when no real display
+        in_docker = os.path.exists("/.dockerenv")
         display = os.environ.get("DISPLAY", "")
-        headless = not bool(display)
+        headless = in_docker or not bool(display)
 
         # Try persistent context; if corrupted, nuke and retry
         for attempt in range(2):
