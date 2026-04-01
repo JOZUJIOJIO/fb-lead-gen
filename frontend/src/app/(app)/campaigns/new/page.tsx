@@ -24,7 +24,7 @@ export default function NewCampaignPage() {
   const [platform, setPlatform] = useState('facebook');
   const [keywords, setKeywords] = useState('');
   const [region, setRegion] = useState('');
-  const [industry, setIndustry] = useState('');
+  const [industries, setIndustries] = useState<string[]>([]);
   const [personaId, setPersonaId] = useState('');
   const [sendLimit, setSendLimit] = useState(20);
   const [maxPerHour, setMaxPerHour] = useState(10);
@@ -64,7 +64,7 @@ export default function NewCampaignPage() {
         persona_id: Number(personaId),
         target_name: '张三',
         target_bio: '跨境电商从业者',
-        target_industry: industry || '电商',
+        target_industry: industries.join(', ') || 'E-commerce',
       });
       setPreviewGreeting(res.data.greeting || res.data.message || JSON.stringify(res.data));
     } catch {
@@ -83,7 +83,7 @@ export default function NewCampaignPage() {
         platform,
         search_keywords: keywords,
         search_region: region,
-        search_industry: industry,
+        search_industry: industries.join(', '),
         persona_id: personaId ? Number(personaId) : null,
         send_limit: sendLimit,
         max_per_hour: maxPerHour,
@@ -243,41 +243,69 @@ export default function NewCampaignPage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">行业</label>
-                <select
-                  value={industry}
-                  onChange={(e) => setIndustry(e.target.value)}
-                  className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-                >
-                  <option value="">全部行业</option>
-                  <option value="E-commerce">电商 / E-commerce</option>
-                  <option value="Finance">金融 / Finance</option>
-                  <option value="Real Estate">房地产 / Real Estate</option>
-                  <option value="Technology">科技 / Technology</option>
-                  <option value="Education">教育 / Education</option>
-                  <option value="Healthcare">医疗健康 / Healthcare</option>
-                  <option value="Manufacturing">制造业 / Manufacturing</option>
-                  <option value="Logistics">物流 / Logistics</option>
-                  <option value="Retail">零售 / Retail</option>
-                  <option value="Food & Beverage">餐饮 / Food & Beverage</option>
-                  <option value="Travel">旅游 / Travel</option>
-                  <option value="Fashion">时尚 / Fashion</option>
-                  <option value="Beauty">美妆 / Beauty</option>
-                  <option value="Automotive">汽车 / Automotive</option>
-                  <option value="Construction">建筑 / Construction</option>
-                  <option value="Agriculture">农业 / Agriculture</option>
-                  <option value="Energy">能源 / Energy</option>
-                  <option value="Legal">法律 / Legal</option>
-                  <option value="Marketing">营销 / Marketing</option>
-                  <option value="Consulting">咨询 / Consulting</option>
-                  <option value="Software">软件 / Software</option>
-                  <option value="AI">人工智能 / AI</option>
-                  <option value="Crypto">加密货币 / Crypto</option>
-                  <option value="Gaming">游戏 / Gaming</option>
-                  <option value="Entertainment">娱乐 / Entertainment</option>
-                  <option value="Sports">体育 / Sports</option>
-                  <option value="Non-profit">非营利 / Non-profit</option>
-                </select>
+                <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">
+                  行业 <span className="font-normal text-[#86868b]">（最多选 5 个）</span>
+                </label>
+                {industries.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {industries.map((ind) => (
+                      <span
+                        key={ind}
+                        className="inline-flex items-center gap-1 rounded-full bg-[#0071e3] px-2.5 py-1 text-xs font-medium text-white"
+                      >
+                        {ind}
+                        <button
+                          type="button"
+                          onClick={() => setIndustries(industries.filter(i => i !== ind))}
+                          className="ml-0.5 hover:text-white/70"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { value: 'E-commerce', label: '电商' },
+                    { value: 'Finance', label: '金融' },
+                    { value: 'Real Estate', label: '房地产' },
+                    { value: 'Technology', label: '科技' },
+                    { value: 'Education', label: '教育' },
+                    { value: 'Healthcare', label: '医疗健康' },
+                    { value: 'Manufacturing', label: '制造业' },
+                    { value: 'Logistics', label: '物流' },
+                    { value: 'Retail', label: '零售' },
+                    { value: 'Food & Beverage', label: '餐饮' },
+                    { value: 'Travel', label: '旅游' },
+                    { value: 'Fashion', label: '时尚' },
+                    { value: 'Beauty', label: '美妆' },
+                    { value: 'Automotive', label: '汽车' },
+                    { value: 'Construction', label: '建筑' },
+                    { value: 'Agriculture', label: '农业' },
+                    { value: 'Energy', label: '能源' },
+                    { value: 'Legal', label: '法律' },
+                    { value: 'Marketing', label: '营销' },
+                    { value: 'Consulting', label: '咨询' },
+                    { value: 'Software', label: '软件' },
+                    { value: 'AI', label: 'AI' },
+                    { value: 'Crypto', label: '加密货币' },
+                    { value: 'Gaming', label: '游戏' },
+                    { value: 'Entertainment', label: '娱乐' },
+                    { value: 'Sports', label: '体育' },
+                    { value: 'Non-profit', label: '非营利' },
+                  ].filter(opt => !industries.includes(opt.value)).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={industries.length >= 5}
+                      onClick={() => setIndustries([...industries, opt.value])}
+                      className="rounded-full border border-[#e5e5e7] bg-[#f5f5f7] px-2.5 py-1 text-xs text-[#1d1d1f] transition-colors hover:border-[#0071e3] hover:text-[#0071e3] disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
