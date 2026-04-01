@@ -22,7 +22,7 @@ interface Lead {
   industry: string | null;
   profile_url: string | null;
   created_at: string;
-  raw_profile_data?: { recent_posts?: unknown[] };
+  raw_profile_data?: { recent_posts?: unknown[]; failure_code?: string };
 }
 
 interface LeadDetail extends Lead {
@@ -298,7 +298,7 @@ export default function LeadsPage() {
                     </span>
                   </td>
                   <td className="px-6 py-3.5 text-sm text-[#86868b] capitalize">{lead.platform}</td>
-                  <td className="px-6 py-3.5"><StatusBadge status={lead.status} /></td>
+                  <td className="px-6 py-3.5"><StatusBadge status={lead.status} failureCode={lead.raw_profile_data?.failure_code} /></td>
                   <td className="px-6 py-3.5 text-sm text-[#86868b]">{lead.industry || '-'}</td>
                   <td className="max-w-[200px] truncate px-6 py-3.5 text-sm text-[#86868b]">{lead.bio || '-'}</td>
                   <td className="px-6 py-3.5 text-sm text-[#86868b]">{new Date(lead.created_at).toLocaleDateString('zh-CN')}</td>
