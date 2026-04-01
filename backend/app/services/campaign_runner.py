@@ -612,6 +612,7 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                             is_platform_restriction = (
                                 failure_code and failure_code.startswith("platform_")
                             )
+                            from sqlalchemy.orm.attributes import flag_modified
                             profile_meta = lead.raw_profile_data or {}
                             if isinstance(profile_meta, dict):
                                 profile_meta["failure_code"] = failure_code
@@ -620,6 +621,7 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                                     failure_code, failure_code
                                 )
                             lead.raw_profile_data = profile_meta
+                            flag_modified(lead, "raw_profile_data")
 
                             # Distinguish permanent blocks from temporary failures
                             is_permanent_block = failure_code in (

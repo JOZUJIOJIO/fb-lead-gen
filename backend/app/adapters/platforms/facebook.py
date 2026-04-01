@@ -250,7 +250,8 @@ class FacebookAdapter(PlatformAdapter):
                 new_in_round = 0
                 for link in result_links:
                     try:
-                        href = await link.get_attribute("href") or ""
+                        # Use JS to get the full, untruncated href
+                        href = await link.evaluate("el => el.href || el.getAttribute('href') || ''")
                         if not href or href in seen_urls:
                             continue
                         if "/profile.php" not in href and "facebook.com/" not in href:
@@ -264,7 +265,7 @@ class FacebookAdapter(PlatformAdapter):
                         if "profile.php?id=" in href:
                             platform_user_id = href.split("id=")[1].split("&")[0]
                         else:
-                            parts = href.rstrip("/").split("/")
+                            parts = href.rstrip("/").split("?")[0].rstrip("/").split("/")
                             platform_user_id = parts[-1] if parts else ""
 
                         # Skip already known UIDs
@@ -946,15 +947,37 @@ class FacebookAdapter(PlatformAdapter):
         return None
 
     async def _get_messenger_url(self, page: Page, profile_url: str) -> str | None:
-        """Try to construct a Messenger URL from the profile."""
-        # Extract user ID or username from profile URL
+        """Construct a Messenger URL from the profile.
+
+        First tries extracting UID from the URL. If the URL appears
+        truncated, navigates to the profile to get the canonical URL.
+        """
         if "profile.php?id=" in profile_url:
             uid = profile_url.split("id=")[1].split("&")[0]
-        else:
-            uid = profile_url.rstrip("/").split("/")[-1]
+            if uid:
+                return f"https://www.facebook.com/messages/t/{uid}"
 
-        if uid:
+        # Extract from URL path
+        uid = profile_url.rstrip("/").split("?")[0].rstrip("/").split("/")[-1]
+
+        # Check if UID looks truncated (ends abruptly, no dots in last segment for very long usernames)
+        if uid and len(uid) > 5:
             return f"https://www.facebook.com/messages/t/{uid}"
+
+        # Fallback: navigate to profile and get canonical URL from the page
+        try:
+            await page.goto(profile_url, wait_until="domcontentloaded", timeout=15000)
+            await _random_delay(1, 2)
+            canonical_url = page.url or ""
+            if "profile.php?id=" in canonical_url:
+                uid = canonical_url.split("id=")[1].split("&")[0]
+            else:
+                uid = canonical_url.rstrip("/").split("?")[0].rstrip("/").split("/")[-1]
+            if uid:
+                return f"https://www.facebook.com/messages/t/{uid}"
+        except Exception as e:
+            logger.debug("_get_messenger_url fallback failed: %s", e)
+
         return None
 
     # Restriction signals: (text_pattern, failure_code)
