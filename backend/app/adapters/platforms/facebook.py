@@ -541,14 +541,39 @@ class FacebookAdapter(PlatformAdapter):
                 if msg_input:
                     break
 
+                # Diagnostic: log what's actually on the page
+                if attempt == 0:
+                    diag = await self._diagnose_messenger_page(page)
+                    logger.warning("send_message: page diagnosis — %s", diag)
+
                 logger.info(
-                    "send_message: input not found (attempt %d/3), waiting longer...",
+                    "send_message: input not found (attempt %d/3), trying recovery...",
                     attempt + 1,
                 )
-                await _random_delay(3, 5)
+
+                # Recovery: click in the lower area of the page to activate input
+                try:
+                    viewport = page.viewport_size or {"width": 1280, "height": 720}
+                    await page.mouse.click(viewport["width"] // 2, viewport["height"] - 100)
+                    await _random_delay(1, 2)
+                except Exception:
+                    pass
+
+                # Recovery: try pressing Tab to focus input
+                try:
+                    await page.keyboard.press("Tab")
+                    await _random_delay(0.5, 1)
+                except Exception:
+                    pass
+
+                await _random_delay(2, 4)
+
+            # ---- Step 4b: Last resort — JS-based input discovery ----
+            if not msg_input:
+                msg_input = await self._find_input_via_js(page)
 
             if not msg_input:
-                logger.error("send_message: input not found on Messenger for %s after 3 attempts", profile_url)
+                logger.error("send_message: input not found on Messenger for %s after all attempts", profile_url)
                 await _save_screenshot(page, "no_msg_input")
                 return {"success": False, "failure_code": "message_input_not_found"}
 
@@ -570,6 +595,105 @@ class FacebookAdapter(PlatformAdapter):
             logger.error("send_message failed for %s: %s", profile_url, e)
             await _save_screenshot(page, "send_error")
             return {"success": False, "failure_code": "send_exception"}
+
+    async def _diagnose_messenger_page(self, page: Page) -> str:
+        """Collect diagnostic info about the Messenger page state."""
+        try:
+            return await page.evaluate("""() => {
+                const info = [];
+                info.push('URL: ' + location.href);
+                info.push('Title: ' + document.title);
+
+                // Count contenteditable elements
+                const editables = document.querySelectorAll('[contenteditable="true"]');
+                info.push('contenteditable count: ' + editables.length);
+                for (let i = 0; i < Math.min(editables.length, 5); i++) {
+                    const el = editables[i];
+                    const tag = el.tagName;
+                    const role = el.getAttribute('role') || '';
+                    const label = el.getAttribute('aria-label') || '';
+                    const rect = el.getBoundingClientRect();
+                    const visible = rect.width > 0 && rect.height > 0;
+                    info.push(`  [${i}] ${tag} role="${role}" label="${label}" visible=${visible} ${Math.round(rect.width)}x${Math.round(rect.height)}`);
+                }
+
+                // Check for common blocking elements
+                const dialogs = document.querySelectorAll('[role="dialog"]');
+                info.push('dialogs: ' + dialogs.length);
+
+                // Check for "can't message" indicators
+                const bodyText = (document.body.innerText || '').substring(0, 500);
+                if (bodyText.includes("can't") || bodyText.includes('无法'))
+                    info.push('WARN: page contains "can\\'t" or "无法"');
+                if (bodyText.includes('Accept') || bodyText.includes('接受'))
+                    info.push('WARN: page contains "Accept" or "接受" (message request?)');
+
+                // Check for textbox role
+                const textboxes = document.querySelectorAll('[role="textbox"]');
+                info.push('textbox count: ' + textboxes.length);
+                for (let i = 0; i < Math.min(textboxes.length, 3); i++) {
+                    const el = textboxes[i];
+                    const ce = el.getAttribute('contenteditable');
+                    const label = el.getAttribute('aria-label') || '';
+                    const rect = el.getBoundingClientRect();
+                    info.push(`  textbox[${i}] ce="${ce}" label="${label}" ${Math.round(rect.width)}x${Math.round(rect.height)}`);
+                }
+
+                return info.join(' | ');
+            }""")
+        except Exception as e:
+            return f"diagnosis failed: {e}"
+
+    async def _find_input_via_js(self, page: Page):
+        """Last resort: use JS to find and return the most likely message input."""
+        try:
+            # Use JS to find the best candidate contenteditable element
+            handle = await page.evaluate_handle("""() => {
+                // Strategy 1: Find contenteditable with textbox role at bottom of page
+                const textboxes = document.querySelectorAll('[role="textbox"][contenteditable="true"]');
+                for (const tb of textboxes) {
+                    const rect = tb.getBoundingClientRect();
+                    // Input should be in the lower half of the viewport and visible
+                    if (rect.width > 100 && rect.height > 10 && rect.top > window.innerHeight * 0.3) {
+                        return tb;
+                    }
+                }
+
+                // Strategy 2: Any contenteditable in the lower portion of the page
+                const editables = document.querySelectorAll('[contenteditable="true"]');
+                let best = null;
+                let bestY = 0;
+                for (const el of editables) {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 100 && rect.height > 10 && rect.top > bestY && rect.top > window.innerHeight * 0.3) {
+                        best = el;
+                        bestY = rect.top;
+                    }
+                }
+                if (best) return best;
+
+                // Strategy 3: Find by aria-label containing message-related text
+                const allEls = document.querySelectorAll('[aria-label]');
+                for (const el of allEls) {
+                    const label = (el.getAttribute('aria-label') || '').toLowerCase();
+                    if ((label.includes('message') || label.includes('消息') || label.includes('type'))
+                        && (el.getAttribute('contenteditable') === 'true' || el.querySelector('[contenteditable="true"]'))) {
+                        return el.getAttribute('contenteditable') === 'true' ? el : el.querySelector('[contenteditable="true"]');
+                    }
+                }
+
+                return null;
+            }""")
+
+            if handle:
+                el = handle.as_element()
+                if el:
+                    logger.info("send_message: found input via JS fallback")
+                    return el
+        except Exception as e:
+            logger.debug("_find_input_via_js failed: %s", e)
+
+        return None
 
     async def _find_messenger_input(self, page: Page):
         """Find the message input on the Messenger page (NOT profile page).
