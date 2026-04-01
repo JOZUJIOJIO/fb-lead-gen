@@ -370,29 +370,43 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                 target_new=campaign.send_limit,
             )
 
-            # 3c. If no results, AI expands keywords and retries (up to 2 times)
+            # 3c. If no results, AI generates diverse keywords and retries (up to 5 rounds)
             if not search_results:
-                for expand_round in range(2):
+                tried_keywords = {chosen_keyword}
+                from app.services.ai_service import _get_provider_config, _default_model, _call_openai_compatible, _call_anthropic
+
+                for expand_round in range(5):
                     logger.info(
-                        "Campaign %d: no new results for '%s', asking AI to expand keywords (round %d)",
-                        campaign_id, chosen_keyword, expand_round + 1,
+                        "Campaign %d: no new results, AI keyword expansion round %d/5",
+                        campaign_id, expand_round + 1,
                     )
                     try:
-                        from app.services.ai_service import _get_provider_config, _default_model, _call_openai_compatible, _call_anthropic
                         provider, base_url, api_key = _get_provider_config()
                         model = _default_model(provider)
                         expand_prompt = (
-                            f"I searched Facebook for people using the keyword '{chosen_keyword}' "
-                            f"(industry: {campaign.search_industry or 'any'}, region: {campaign.search_region or 'any'}) "
-                            f"but found no new results. Suggest ONE alternative search keyword that targets "
-                            f"a similar audience but uses different wording. "
-                            f"Output ONLY the keyword, nothing else. Keep it under 5 words."
+                            f"I'm searching Facebook People to find potential business contacts.\n"
+                            f"Original keyword: '{campaign.search_keywords or chosen_keyword}'\n"
+                            f"Industry: {campaign.search_industry or 'any'}\n"
+                            f"Region: {campaign.search_region or 'any'}\n"
+                            f"Already tried (no results): {', '.join(sorted(tried_keywords))}\n\n"
+                            f"Suggest ONE different Facebook search keyword to find real people "
+                            f"in this industry. Be creative — try job titles, company types, "
+                            f"industry terms, role names, or niche community terms. "
+                            f"MUST be different from all tried keywords.\n"
+                            f"Output ONLY the keyword (1-5 words), nothing else."
                         )
                         if provider == "anthropic":
-                            expanded = await _call_anthropic(api_key, model, "You suggest search keywords.", expand_prompt)
+                            expanded = await _call_anthropic(api_key, model, "You are a creative search keyword generator.", expand_prompt)
                         else:
-                            expanded = await _call_openai_compatible(base_url, api_key, model, "You suggest search keywords.", expand_prompt)
-                        expanded = expanded.strip().strip('"').strip("'")
+                            expanded = await _call_openai_compatible(base_url, api_key, model, "You are a creative search keyword generator.", expand_prompt)
+                        expanded = expanded.strip().strip('"').strip("'").strip()
+
+                        # Skip if AI repeated a keyword
+                        if expanded.lower() in {k.lower() for k in tried_keywords}:
+                            logger.info("Campaign %d: AI repeated '%s', skipping", campaign_id, expanded)
+                            continue
+
+                        tried_keywords.add(expanded)
                         logger.info("Campaign %d: AI suggested keyword: '%s'", campaign_id, expanded)
 
                         search_results = await adapter.search_people(
