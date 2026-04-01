@@ -857,34 +857,64 @@ class FacebookAdapter(PlatformAdapter):
             raw_messages = await page.evaluate("""(maxMessages) => {
                 const results = [];
 
+                // Step 1: Try to get the logged-in user's name from navigation
+                let myName = '';
+                // Facebook nav bar profile link or account menu
+                const profileLinks = document.querySelectorAll(
+                    'a[href*="/profile"], a[aria-label*="个人主页"], a[aria-label*="Profile"]'
+                );
+                for (const link of profileLinks) {
+                    const label = link.getAttribute('aria-label') || '';
+                    if (label && !label.includes('Profile') && !label.includes('个人主页')) {
+                        myName = label;
+                        break;
+                    }
+                    // Try the text content of nearby elements
+                    const nameEl = link.querySelector('span');
+                    if (nameEl && nameEl.innerText.trim()) {
+                        myName = nameEl.innerText.trim();
+                        break;
+                    }
+                }
+
+                // Step 2: Get viewport width for position-based detection
+                const viewportWidth = window.innerWidth;
+                const midpoint = viewportWidth / 2;
+
                 // Get all message rows in the conversation
                 const messageGroups = document.querySelectorAll('[role="row"]');
 
                 for (const group of messageGroups) {
-                    // Determine if this is our message or theirs
-                    // Our messages are typically right-aligned or have a specific background
+                    // Determine if this is our message or theirs using multiple strategies
+
                     const isOurs = (() => {
-                        // Method 1: Check background color (our messages are usually blue/colored)
-                        const bgEls = group.querySelectorAll('div[style*="background"]');
-                        for (const el of bgEls) {
-                            const bg = el.style.backgroundColor || '';
-                            // Facebook primary blue
-                            if (bg.includes('rgb(0, 132, 255)') || bg.includes('#0084ff')
-                                || bg.includes('rgb(0,') && bg.includes('255)')) {
-                                return true;
+                        // Strategy 1: Position-based detection (most reliable)
+                        // In Messenger, our messages appear on the RIGHT side, theirs on the LEFT
+                        const textEls = group.querySelectorAll('div[dir="auto"]');
+                        for (const el of textEls) {
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                // If the message center is in the right half, it's ours
+                                const msgCenter = rect.left + rect.width / 2;
+                                return msgCenter > midpoint;
                             }
                         }
-                        // Method 2: Check class-based alignment
-                        const wrapper = group.querySelector('[class*="__fb-light-mode"]')
-                            || group.querySelector('div');
-                        if (wrapper) {
-                            const style = window.getComputedStyle(wrapper);
-                            if (style.flexDirection === 'row-reverse'
-                                || style.justifyContent === 'flex-end'
-                                || style.marginLeft === 'auto') {
-                                return true;
+
+                        // Strategy 2: Check if sender name matches our name
+                        if (myName) {
+                            const senderEls = group.querySelectorAll('span[dir="auto"]');
+                            for (const el of senderEls) {
+                                const name = el.innerText.trim();
+                                if (name === myName) return true;
                             }
                         }
+
+                        // Strategy 3: Avatar presence — others' messages have an avatar,
+                        // our messages do not show our avatar in Messenger
+                        const avatars = group.querySelectorAll('img[alt], svg image');
+                        const hasAvatar = avatars.length > 0;
+                        if (hasAvatar) return false;
+
                         return false;
                     })();
 
@@ -897,6 +927,11 @@ class FacebookAdapter(PlatformAdapter):
                             if (text.match(/^\\d{1,2}:\\d{2}/) || text.match(/^(Yesterday|Today|星期)/))
                                 continue;
                             if (text.length < 2) continue;
+
+                            // Deduplicate: skip if same content and role as the last message
+                            const lastMsg = results.length > 0 ? results[results.length - 1] : null;
+                            if (lastMsg && lastMsg.content === text && lastMsg.role === (isOurs ? 'assistant' : 'user'))
+                                continue;
 
                             results.push({
                                 role: isOurs ? 'assistant' : 'user',

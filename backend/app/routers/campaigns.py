@@ -134,7 +134,7 @@ async def campaign_stats(
     user: User = Depends(get_current_user),
 ):
     """Dashboard stats with reply rates."""
-    from app.models import LeadStatus
+    from app.models import LeadStatus, MessageDirection
 
     total_campaigns = (await db.execute(select(func.count(Campaign.id)))).scalar() or 0
     active_campaigns = (
@@ -145,7 +145,7 @@ async def campaign_stats(
     total_leads = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
     total_messages = (await db.execute(select(func.count(Message.id)))).scalar() or 0
 
-    # Reply stats
+    # Reply stats (lead-based, kept for backward compatibility)
     messaged_count = (await db.execute(
         select(func.count(Lead.id)).where(Lead.status.in_([
             LeadStatus.messaged, LeadStatus.replied, LeadStatus.converted
@@ -166,7 +166,44 @@ async def campaign_stats(
         select(func.count(Lead.id)).where(Lead.status == LeadStatus.rejected)
     )).scalar() or 0
 
-    reply_rate = round((replied_count / messaged_count * 100), 1) if messaged_count > 0 else 0
+    # Actual message counts (message-based)
+    outbound_messages = (await db.execute(
+        select(func.count(Message.id)).where(
+            Message.direction == MessageDirection.outbound
+        )
+    )).scalar() or 0
+    inbound_messages = (await db.execute(
+        select(func.count(Message.id)).where(
+            Message.direction == MessageDirection.inbound
+        )
+    )).scalar() or 0
+
+    # Auto-reply rounds: outbound messages that are AI-generated AND the lead
+    # has at least one inbound message (i.e., sent as auto-replies, not initial greetings)
+    leads_with_inbound = select(Message.lead_id).where(
+        Message.direction == MessageDirection.inbound
+    ).group_by(Message.lead_id).subquery()
+
+    auto_reply_rounds = (await db.execute(
+        select(func.count(Message.id)).where(
+            Message.direction == MessageDirection.outbound,
+            Message.ai_generated == True,  # noqa: E712
+            Message.lead_id.in_(select(leads_with_inbound.c.lead_id))
+        )
+    )).scalar() or 0
+
+    # Reply rate based on actual data: leads with inbound / leads that have been messaged
+    leads_with_inbound_count = (await db.execute(
+        select(func.count(func.distinct(Message.lead_id))).where(
+            Message.direction == MessageDirection.inbound
+        )
+    )).scalar() or 0
+    leads_messaged_count = (await db.execute(
+        select(func.count(func.distinct(Message.lead_id))).where(
+            Message.direction == MessageDirection.outbound
+        )
+    )).scalar() or 0
+    reply_rate = round((leads_with_inbound_count / leads_messaged_count * 100), 1) if leads_messaged_count > 0 else 0
 
     # Per-campaign stats
     campaign_stats_list = []
@@ -186,12 +223,31 @@ async def campaign_stats(
                 Lead.status.in_([LeadStatus.replied, LeadStatus.converted])
             )
         )).scalar() or 0
+        # Per-campaign outbound/inbound message counts
+        c_outbound = (await db.execute(
+            select(func.count(Message.id)).where(
+                Message.lead_id.in_(
+                    select(Lead.id).where(Lead.campaign_id == c.id)
+                ),
+                Message.direction == MessageDirection.outbound,
+            )
+        )).scalar() or 0
+        c_inbound = (await db.execute(
+            select(func.count(Message.id)).where(
+                Message.lead_id.in_(
+                    select(Lead.id).where(Lead.campaign_id == c.id)
+                ),
+                Message.direction == MessageDirection.inbound,
+            )
+        )).scalar() or 0
         campaign_stats_list.append({
             "id": c.id,
             "name": c.name or c.search_keywords or "未命名",
             "messaged": c_messaged,
             "replied": c_replied,
             "reply_rate": round((c_replied / c_messaged * 100), 1) if c_messaged > 0 else 0,
+            "outbound": c_outbound,
+            "inbound": c_inbound,
         })
 
     return {
@@ -204,6 +260,9 @@ async def campaign_stats(
         "converted_count": converted_count,
         "pending_review_count": pending_review_count,
         "skipped_count": skipped_count,
+        "outbound_messages": outbound_messages,
+        "inbound_messages": inbound_messages,
+        "auto_reply_rounds": auto_reply_rounds,
         "reply_rate": reply_rate,
         "campaign_stats": campaign_stats_list,
     }

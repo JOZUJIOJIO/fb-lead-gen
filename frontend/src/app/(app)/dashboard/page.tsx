@@ -16,8 +16,11 @@ interface Stats {
   converted_count: number;
   pending_review_count: number;
   skipped_count: number;
+  outbound_messages: number;
+  inbound_messages: number;
+  auto_reply_rounds: number;
   reply_rate: number;
-  campaign_stats: { id: number; name: string; messaged: number; replied: number; reply_rate: number }[];
+  campaign_stats: { id: number; name: string; messaged: number; replied: number; reply_rate: number; outbound: number; inbound: number }[];
 }
 
 export default function DashboardPage() {
@@ -43,7 +46,7 @@ export default function DashboardPage() {
         <StatsCard
           icon={Send}
           label="已发送消息"
-          value={loading ? '...' : (stats?.messaged_count ?? 0)}
+          value={loading ? '...' : (stats?.outbound_messages ?? 0)}
         />
         <StatsCard
           icon={MessageSquare}
@@ -67,9 +70,9 @@ export default function DashboardPage() {
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
           <div className="flex items-center gap-2 mb-1">
             <CheckCircle className="h-4 w-4 text-emerald-500" />
-            <span className="text-xs text-[#86868b]">已回复</span>
+            <span className="text-xs text-[#86868b]">收到回复</span>
           </div>
-          <p className="text-lg font-semibold text-[#1d1d1f]">{loading ? '...' : stats?.replied_count ?? 0}</p>
+          <p className="text-lg font-semibold text-[#1d1d1f]">{loading ? '...' : stats?.inbound_messages ?? 0}</p>
         </div>
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
           <div className="flex items-center gap-2 mb-1">
