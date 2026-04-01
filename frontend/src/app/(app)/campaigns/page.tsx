@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, ArrowUpDown, Copy } from 'lucide-react';
+import { Plus, Search, ArrowUpDown, Copy, Trash2 } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { campaignApi } from '@/lib/api';
 
@@ -38,6 +38,8 @@ export default function CampaignsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
   const [sortAsc, setSortAsc] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [deleting, setDeleting] = useState(false);
   const router = useRouter();
 
   const refreshCampaigns = () => {
@@ -58,6 +60,50 @@ export default function CampaignsPage() {
       refreshCampaigns();
     } catch (err) {
       console.error('Failed to duplicate campaign:', err);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (!confirm('确定删除该任务？关联的线索和消息也会被删除。')) return;
+    try {
+      await campaignApi.delete(String(id));
+      setSelected(prev => { const s = new Set(prev); s.delete(id); return s; });
+      refreshCampaigns();
+    } catch (err) {
+      console.error('Failed to delete campaign:', err);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`确定删除选中的 ${selected.size} 个任务？关联的线索和消息也会被删除。`)) return;
+    setDeleting(true);
+    try {
+      await Promise.all(Array.from(selected).map(id => campaignApi.delete(String(id))));
+      setSelected(new Set());
+      refreshCampaigns();
+    } catch (err) {
+      console.error('Failed to batch delete:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleSelect = (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    setSelected(prev => {
+      const s = new Set(prev);
+      if (s.has(id)) s.delete(id); else s.add(id);
+      return s;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map(c => c.id)));
     }
   };
 
@@ -140,10 +186,39 @@ export default function CampaignsPage() {
         </select>
       </div>
 
+      {/* Batch actions bar */}
+      {selected.size > 0 && (
+        <div className="mb-4 flex items-center gap-3 rounded-xl bg-[#f5f5f7] px-4 py-2.5 border border-[#e5e5e7]/60">
+          <span className="text-sm text-[#1d1d1f]">已选中 <strong>{selected.size}</strong> 个任务</span>
+          <button
+            onClick={handleBatchDelete}
+            disabled={deleting}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {deleting ? '删除中...' : '批量删除'}
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-xs text-[#86868b] hover:text-[#1d1d1f]"
+          >
+            取消选择
+          </button>
+        </div>
+      )}
+
       <div className="rounded-2xl bg-white border border-[#e5e5e7]/60 shadow-sm overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="border-b border-[#e5e5e7]/60">
+              <th className="w-10 px-3 py-3.5">
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && selected.size === filtered.length}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border-[#e5e5e7] text-[#0071e3] focus:ring-[#0071e3]"
+                />
+              </th>
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">任务名称</th>
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">平台</th>
               <th className="px-6 py-3.5 text-left"><SortBtn k="status" label="状态" /></th>
@@ -155,10 +230,10 @@ export default function CampaignsPage() {
           </thead>
           <tbody className="divide-y divide-[#e5e5e7]/40">
             {loading && (
-              <tr><td colSpan={7} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td></tr>
+              <tr><td colSpan={8} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-6 py-12 text-center text-sm text-[#86868b]">
+              <tr><td colSpan={8} className="px-6 py-12 text-center text-sm text-[#86868b]">
                 {campaigns.length === 0 ? '暂无任务，点击「新建任务」开始' : '没有匹配的任务'}
               </td></tr>
             )}
@@ -166,8 +241,16 @@ export default function CampaignsPage() {
               <tr
                 key={campaign.id}
                 onClick={() => router.push(`/campaigns/${campaign.id}`)}
-                className="cursor-pointer transition-colors hover:bg-[#f5f5f7]/50"
+                className={`cursor-pointer transition-colors hover:bg-[#f5f5f7]/50 ${selected.has(campaign.id) ? 'bg-blue-50/50' : ''}`}
               >
+                <td className="w-10 px-3 py-4" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(campaign.id)}
+                    onChange={(e) => toggleSelect(e as unknown as React.MouseEvent, campaign.id)}
+                    className="h-4 w-4 rounded border-[#e5e5e7] text-[#0071e3] focus:ring-[#0071e3]"
+                  />
+                </td>
                 <td className="px-6 py-4">
                   <Link href={`/campaigns/${campaign.id}`} className="text-sm font-medium text-[#1d1d1f] hover:text-[#0071e3]">
                     {campaign.name || campaign.search_keywords || '未命名任务'}
@@ -195,13 +278,22 @@ export default function CampaignsPage() {
                   <span className="text-sm text-[#86868b]">{new Date(campaign.created_at).toLocaleDateString('zh-CN')}</span>
                 </td>
                 <td className="px-6 py-4">
-                  <button
-                    onClick={(e) => handleDuplicate(e, campaign.id)}
-                    title="复制任务"
-                    className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-[#f5f5f7] hover:text-[#1d1d1f]"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => handleDuplicate(e, campaign.id)}
+                      title="复制任务"
+                      className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-[#f5f5f7] hover:text-[#1d1d1f]"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(e, campaign.id)}
+                      title="删除任务"
+                      className="rounded-lg p-1.5 text-[#86868b] transition-colors hover:bg-red-50 hover:text-red-500"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
