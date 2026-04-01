@@ -214,13 +214,40 @@ export default function NewCampaignPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">行业</label>
-                <input
-                  type="text"
+                <select
                   value={industry}
                   onChange={(e) => setIndustry(e.target.value)}
-                  placeholder="例如：电子商务"
-                  className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-                />
+                  className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                >
+                  <option value="">全部行业</option>
+                  <option value="E-commerce">电商 / E-commerce</option>
+                  <option value="Finance">金融 / Finance</option>
+                  <option value="Real Estate">房地产 / Real Estate</option>
+                  <option value="Technology">科技 / Technology</option>
+                  <option value="Education">教育 / Education</option>
+                  <option value="Healthcare">医疗健康 / Healthcare</option>
+                  <option value="Manufacturing">制造业 / Manufacturing</option>
+                  <option value="Logistics">物流 / Logistics</option>
+                  <option value="Retail">零售 / Retail</option>
+                  <option value="Food & Beverage">餐饮 / Food & Beverage</option>
+                  <option value="Travel">旅游 / Travel</option>
+                  <option value="Fashion">时尚 / Fashion</option>
+                  <option value="Beauty">美妆 / Beauty</option>
+                  <option value="Automotive">汽车 / Automotive</option>
+                  <option value="Construction">建筑 / Construction</option>
+                  <option value="Agriculture">农业 / Agriculture</option>
+                  <option value="Energy">能源 / Energy</option>
+                  <option value="Legal">法律 / Legal</option>
+                  <option value="Marketing">营销 / Marketing</option>
+                  <option value="Consulting">咨询 / Consulting</option>
+                  <option value="Software">软件 / Software</option>
+                  <option value="AI">人工智能 / AI</option>
+                  <option value="Crypto">加密货币 / Crypto</option>
+                  <option value="Gaming">游戏 / Gaming</option>
+                  <option value="Entertainment">娱乐 / Entertainment</option>
+                  <option value="Sports">体育 / Sports</option>
+                  <option value="Non-profit">非营利 / Non-profit</option>
+                </select>
               </div>
             </div>
           </div>

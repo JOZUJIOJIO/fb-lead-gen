@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Activity } from 'lucide-react';
+import Link from 'next/link';
 import api from '@/lib/api';
 
 type Status = 'checking' | 'ok' | 'warn' | 'error';
@@ -163,7 +164,7 @@ export default function HealthIndicator() {
     : p === 'kimi' ? 'Kimi'
     : p || 'AI';
 
-  const items: { label: string; desc: string; status: Status; detail: string }[] = [
+  const items: { label: string; desc: string; status: Status; detail: string; actionHref?: string; actionLabel?: string }[] = [
     {
       label: '后端服务',
       desc: 'FastAPI',
@@ -175,18 +176,24 @@ export default function HealthIndicator() {
       desc: providerLabel(health.apiProvider),
       status: health.api,
       detail: health.api === 'ok' ? '已配置' : health.api === 'warn' ? '未配置' : '异常',
+      actionHref: health.api !== 'ok' ? '/settings' : undefined,
+      actionLabel: '去配置',
     },
     {
       label: 'Facebook 登录',
       desc: 'Cookie',
       status: health.cookie,
       detail: health.cookie === 'ok' ? '已导入' : health.cookie === 'warn' ? '未导入' : '异常',
+      actionHref: health.cookie !== 'ok' ? '/settings' : undefined,
+      actionLabel: '去导入',
     },
     {
       label: '运行中任务',
       desc: 'Campaign',
       status: health.tasks,
       detail: health.runningCount > 0 ? `${health.runningCount} 个运行中` : '无任务',
+      actionHref: health.tasks === 'warn' ? '/campaigns/new' : '/campaigns',
+      actionLabel: health.tasks === 'warn' ? '新建任务' : '查看',
     },
   ];
 
@@ -213,7 +220,7 @@ export default function HealthIndicator() {
           </div>
           <div className="divide-y divide-[#e5e5e7]/40">
             {items.map((item) => (
-              <div key={item.label} className="flex items-center justify-between px-4 py-3">
+              <div key={item.label} className="flex items-center justify-between px-4 py-3 gap-2">
                 <div>
                   <p className="text-sm font-medium text-[#1d1d1f]">{item.label}</p>
                   <p className="text-[11px] text-[#86868b]">{item.desc}</p>
@@ -223,6 +230,11 @@ export default function HealthIndicator() {
                   <span className={`text-xs font-medium ${statusColor[item.status]}`}>
                     {item.detail}
                   </span>
+                  {item.actionHref && item.status !== 'ok' && (
+                    <Link href={item.actionHref} className="text-[10px] text-[#0071e3] hover:underline ml-1">
+                      {item.actionLabel}
+                    </Link>
+                  )}
                 </div>
               </div>
             ))}

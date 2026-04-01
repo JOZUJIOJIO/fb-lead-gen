@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Fragment } from 'react';
 import { ArrowLeft, Pause, Play, Square, Clock, Check, X, Eye, RotateCcw, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
-import { campaignApi, leadApi } from '@/lib/api';
+import { campaignApi, leadApi, personaApi } from '@/lib/api';
 
 interface LeadBrief {
   id: number;
@@ -54,11 +54,18 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
   const [reviewingId, setReviewingId] = useState<number | null>(null);
   const [expandedLeadId, setExpandedLeadId] = useState<number | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<{id: number; direction: string; content: string; created_at: string}[]>([]);
+  const [personaName, setPersonaName] = useState<string>('');
 
   const fetchCampaign = useCallback(async () => {
     try {
       const res = await campaignApi.get(params.id);
       setCampaign(res.data);
+      // Fetch persona name
+      if (res.data.persona_id) {
+        personaApi.get(String(res.data.persona_id))
+          .then(pRes => setPersonaName(pRes.data?.name || ''))
+          .catch(() => {});
+      }
       // Fetch pending reviews if review_mode
       if (res.data.review_mode) {
         try {
@@ -226,7 +233,7 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
       </div>
 
       {/* Campaign Info */}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
         <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
           <p className="text-xs text-[#86868b]">平台</p>
           <p className="mt-1 text-sm font-medium text-[#1d1d1f] capitalize">{campaign.platform}</p>
@@ -243,13 +250,22 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
           <p className="text-xs text-[#86868b]">行业</p>
           <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{campaign.search_industry || '全部'}</p>
         </div>
+        <div className="rounded-2xl bg-white p-4 border border-[#e5e5e7]/60 shadow-sm">
+          <p className="text-xs text-[#86868b]">人设</p>
+          <p className="mt-1 text-sm font-medium text-[#1d1d1f]">{personaName || '未设置'}</p>
+        </div>
       </div>
 
       {/* Progress */}
       <div className="mb-6 rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <span className="text-sm font-medium text-[#1d1d1f]">发送进度</span>
-          <span className="text-sm text-[#86868b]">{campaign.progress_current} / {campaign.send_limit}</span>
+          <div className="flex items-center gap-3 text-sm text-[#86868b]">
+            {campaign.progress_total > 0 && (
+              <span>搜到 {campaign.progress_total} 人</span>
+            )}
+            <span>已发 {campaign.progress_current} / {campaign.send_limit}</span>
+          </div>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-[#f0f0f2]">
           <div

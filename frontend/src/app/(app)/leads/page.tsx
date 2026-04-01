@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Search, ChevronDown, ChevronUp, Download, CheckSquare } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
-import { leadApi } from '@/lib/api';
+import { leadApi, campaignApi } from '@/lib/api';
 import api from '@/lib/api';
 
 const BATCH_STATUS_OPTIONS = [
@@ -52,18 +52,35 @@ export default function LeadsPage() {
   const [expandedDetail, setExpandedDetail] = useState<LeadDetail | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
+  const [campaignFilter, setCampaignFilter] = useState('');
+  const [campaigns, setCampaigns] = useState<{id: number; name: string}[]>([]);
 
   useEffect(() => {
     const params: Record<string, string> = {};
     if (search) params.search = search;
     if (statusFilter) params.status = statusFilter;
     if (platformFilter) params.platform = platformFilter;
+    if (campaignFilter) params.campaign_id = campaignFilter;
 
     leadApi.list(params)
       .then(res => setLeads(res.data))
       .catch(err => console.error('Failed to load leads:', err))
       .finally(() => setLoading(false));
-  }, [search, statusFilter, platformFilter]);
+  }, [search, statusFilter, platformFilter, campaignFilter]);
+
+  // Load campaign list for filter dropdown
+  useEffect(() => {
+    campaignApi.list()
+      .then(res => {
+        if (Array.isArray(res.data)) {
+          setCampaigns(res.data.map((c: { id: number; name: string; search_keywords: string }) => ({
+            id: c.id,
+            name: c.name || c.search_keywords || `任务 #${c.id}`,
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => {
@@ -167,6 +184,16 @@ export default function LeadsPage() {
         >
           {platformOptions.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <select
+          value={campaignFilter}
+          onChange={(e) => setCampaignFilter(e.target.value)}
+          className="rounded-xl border border-[#e5e5e7] bg-white px-4 py-2.5 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3]"
+        >
+          <option value="">全部任务</option>
+          {campaigns.map((c) => (
+            <option key={c.id} value={String(c.id)}>{c.name}</option>
           ))}
         </select>
       </div>
