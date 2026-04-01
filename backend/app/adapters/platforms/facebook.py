@@ -503,11 +503,16 @@ class FacebookAdapter(PlatformAdapter):
                 return {"success": False, "failure_code": restriction}
 
             # ---- Step 4: Find the Messenger input box ----
+            # Dismiss again — PIN dialog may still be covering the input
+            await self._dismiss_blocking_dialogs(page)
+            await _random_delay(1, 2)
+
             msg_input = await self._find_messenger_input(page)
 
             if not msg_input:
-                await _random_delay(2, 3)
+                # Retry: dismiss once more and wait longer
                 await self._dismiss_blocking_dialogs(page)
+                await _random_delay(2, 3)
                 restriction = await self._detect_platform_restriction(page)
                 if restriction:
                     return {"success": False, "failure_code": restriction}
@@ -572,42 +577,60 @@ class FacebookAdapter(PlatformAdapter):
         return None
 
     async def _dismiss_blocking_dialogs(self, page: Page) -> None:
-        """Close blocking dialogs like PIN code setup, cookie consent, etc."""
+        """Close blocking dialogs like PIN code setup, cookie consent, etc.
+
+        Facebook's dialog close buttons use various patterns:
+        - aria-label="Close" / "关闭"
+        - SVG X icon inside a clickable div
+        - "Not now" / "以后再说" / "继续" text buttons
+        """
         try:
             dismissed = await page.evaluate("""() => {
                 let closed = 0;
-                // Close any dialog by clicking X / close / dismiss buttons
-                const closeSelectors = [
-                    '[aria-label="Close"]',
-                    '[aria-label="关闭"]',
-                    '[aria-label="Close chat"]',
-                    '[aria-label="取消"]',
-                    '[aria-label="Not now"]',
-                    '[aria-label="以后再说"]',
-                    'div[role="dialog"] [aria-label="Close"]',
-                    'div[role="dialog"] [aria-label="关闭"]',
-                ];
-                for (const sel of closeSelectors) {
-                    const btns = document.querySelectorAll(sel);
-                    for (const btn of btns) {
-                        if (btn.offsetParent !== null) {  // visible
-                            btn.click();
-                            closed++;
+
+                // Strategy 1: aria-label close buttons (broadened)
+                const closeLabels = ['close', '关闭', 'dismiss', '取消', 'not now', '以后再说'];
+                const allClickable = document.querySelectorAll('[role="button"], button, [aria-label]');
+                for (const el of allClickable) {
+                    const label = (el.getAttribute('aria-label') || '').toLowerCase();
+                    if (closeLabels.some(l => label.includes(l)) && el.offsetParent !== null) {
+                        el.click();
+                        closed++;
+                    }
+                }
+
+                // Strategy 2: Find X icon (svg with close/x path) inside dialogs
+                const dialogs = document.querySelectorAll('[role="dialog"]');
+                for (const dialog of dialogs) {
+                    // Look for small clickable elements near top-right (close buttons)
+                    const candidates = dialog.querySelectorAll('div[role="button"], svg, [aria-label]');
+                    for (const c of candidates) {
+                        const rect = c.getBoundingClientRect();
+                        // Close button is typically in top-right quadrant of dialog
+                        const dialogRect = dialog.getBoundingClientRect();
+                        if (rect.right > dialogRect.right - 80 && rect.top < dialogRect.top + 80) {
+                            const clickTarget = c.closest('[role="button"]') || c;
+                            if (clickTarget.offsetParent !== null) {
+                                clickTarget.click();
+                                closed++;
+                                break;
+                            }
                         }
                     }
                 }
-                // Also try clicking "Not Now" / "以后再说" text buttons
-                const allBtns = document.querySelectorAll('[role="button"], button');
-                for (const btn of allBtns) {
+
+                // Strategy 3: Text-based buttons
+                const textBtns = document.querySelectorAll('[role="button"], button');
+                for (const btn of textBtns) {
                     const text = (btn.textContent || '').trim();
-                    if (text === 'Not Now' || text === '以后再说' || text === 'Not now'
-                        || text === '稍后' || text === 'Skip' || text === '跳过') {
+                    if (['Not Now', 'Not now', '以后再说', '稍后', 'Skip', '跳过', '继续'].includes(text)) {
                         if (btn.offsetParent !== null) {
                             btn.click();
                             closed++;
                         }
                     }
                 }
+
                 return closed;
             }""")
             if dismissed:
