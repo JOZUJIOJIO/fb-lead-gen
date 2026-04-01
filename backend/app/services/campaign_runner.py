@@ -550,20 +550,32 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                                 )
                             lead.raw_profile_data = profile_meta
 
-                            # Distinguish user-level blocks from account-level blocks
-                            is_user_level_block = failure_code in (
+                            # Distinguish permanent blocks from temporary failures
+                            is_permanent_block = failure_code in (
                                 "platform_messaging_blocked",
+                            )
+                            is_temporary_failure = failure_code in (
                                 "message_button_not_found",
                                 "message_input_not_found",
                             )
 
-                            if is_user_level_block:
-                                # This user can't be messaged — blacklist, continue to next
+                            if is_permanent_block:
+                                # Facebook explicitly says can't message — blacklist
                                 logger.info(
                                     "Campaign %d: [%s] BLACKLIST — %s，永久跳过",
                                     campaign_id, target_name, failure_code,
                                 )
                                 lead.status = LeadStatus.blacklisted
+                                await session.commit()
+                                continue
+
+                            if is_temporary_failure:
+                                # Button/input not found — may be page load issue, mark as failed (retryable)
+                                logger.info(
+                                    "Campaign %d: [%s] FAILED (retryable) — %s",
+                                    campaign_id, target_name, failure_code,
+                                )
+                                lead.status = LeadStatus.failed
                                 await session.commit()
                                 continue
 
