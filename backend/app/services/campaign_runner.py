@@ -368,16 +368,33 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                     lead.status = LeadStatus.analyzing
                     await session.commit()
 
+                    logger.info("Campaign %d: [%s] Step 1/4 — 访问主页提取资料...", campaign_id, target_name)
                     profile_data = await adapter.get_profile(profile_url)
+                    logger.info(
+                        "Campaign %d: [%s] Step 1/4 完成 — name=%s, bio=%s, work=%s",
+                        campaign_id, target_name,
+                        profile_data.get("name", "?"),
+                        (profile_data.get("bio") or "")[:50],
+                        (profile_data.get("work") or "")[:50],
+                    )
 
                     # 4c. AI analysis
                     raw_html = profile_data.pop("raw_html", "")
                     ai_analysis = {}
                     if raw_html:
+                        logger.info("Campaign %d: [%s] Step 2/4 — AI 分析用户资料...", campaign_id, target_name)
                         try:
                             ai_analysis = await analyze_profile(raw_html)
+                            logger.info(
+                                "Campaign %d: [%s] Step 2/4 完成 — industry=%s, interests=%s",
+                                campaign_id, target_name,
+                                ai_analysis.get("industry", "?"),
+                                str(ai_analysis.get("interests", ""))[:50],
+                            )
                         except Exception as e:
-                            logger.warning("Campaign %d: AI analysis failed for %s: %s", campaign_id, target_name, e)
+                            logger.warning("Campaign %d: [%s] Step 2/4 AI 分析失败(继续): %s", campaign_id, target_name, e)
+                    else:
+                        logger.info("Campaign %d: [%s] Step 2/4 跳过 — 无 HTML 数据", campaign_id, target_name)
 
                     merged_profile = {**profile_data, **ai_analysis}
                     lead.bio = merged_profile.get("bio", "")[:500] if merged_profile.get("bio") else None
@@ -386,8 +403,10 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                     await session.commit()
 
                     # 4d. Generate personalized greeting
+                    logger.info("Campaign %d: [%s] Step 3/4 — AI 生成个性化问候语...", campaign_id, target_name)
                     try:
                         greeting = await generate_greeting(merged_profile, persona_dict)
+                        logger.info("Campaign %d: [%s] Step 3/4 完成 — 消息: %s...", campaign_id, target_name, greeting[:60])
                     except Exception as e:
                         logger.error("Campaign %d: greeting generation failed for %s: %s", campaign_id, target_name, e)
                         lead.status = LeadStatus.failed
@@ -408,6 +427,7 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                         await _wait_for_daily_limit(session, campaign_id)
 
                     # 4e. Send message (or queue for review)
+                    logger.info("Campaign %d: [%s] Step 4/4 — 发送消息...", campaign_id, target_name)
                     if campaign.review_mode:
                         lead.status = LeadStatus.pending_review
                         msg = Message(
