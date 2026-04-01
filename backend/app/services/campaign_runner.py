@@ -429,43 +429,12 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                     lead.raw_profile_data = merged_profile
                     await session.commit()
 
-                    # 4c-2. Activity & messaging pre-check
+                    # 4c-2. Activity check (soft — log only, don't blacklist for missing posts)
                     recent_posts = merged_profile.get("recent_posts", [])
-                    is_active = len(recent_posts) > 0
-                    if not is_active:
-                        logger.info(
-                            "Campaign %d: [%s] BLACKLIST — 非活跃用户(无近期发帖)，永久跳过",
-                            campaign_id, target_name,
-                        )
-                        lead.status = LeadStatus.blacklisted
-                        profile_meta = lead.raw_profile_data or {}
-                        if isinstance(profile_meta, dict):
-                            profile_meta["failure_code"] = "user_inactive"
-                            profile_meta["failure_reason"] = "非活跃用户：主页无近期发帖"
-                        lead.raw_profile_data = profile_meta
-                        await session.commit()
-                        continue
-
-                    # Check if Message button exists on the profile page
-                    # (adapter is still on profile page from get_profile)
-                    can_message = await adapter.check_can_message(profile_url)
-                    if not can_message["ok"]:
-                        reason_code = can_message.get("code", "no_message_button")
-                        reason_text = can_message.get("reason", "无法发送私信")
-                        logger.info(
-                            "Campaign %d: [%s] BLACKLIST — %s，永久跳过",
-                            campaign_id, target_name, reason_text,
-                        )
-                        lead.status = LeadStatus.blacklisted
-                        profile_meta = lead.raw_profile_data or {}
-                        if isinstance(profile_meta, dict):
-                            profile_meta["failure_code"] = reason_code
-                            profile_meta["failure_reason"] = reason_text
-                        lead.raw_profile_data = profile_meta
-                        await session.commit()
-                        continue
-
-                    logger.info("Campaign %d: [%s] 预检通过 — 活跃用户，可私信", campaign_id, target_name)
+                    if recent_posts:
+                        logger.info("Campaign %d: [%s] 活跃用户 — %d 条近期帖子", campaign_id, target_name, len(recent_posts))
+                    else:
+                        logger.info("Campaign %d: [%s] 未检测到帖子（可能是页面未完全加载），继续处理", campaign_id, target_name)
 
                     # 4d. Generate personalized greeting
                     logger.info("Campaign %d: [%s] Step 3/4 — AI 生成个性化问候语...", campaign_id, target_name)

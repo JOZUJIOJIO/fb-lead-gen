@@ -1,8 +1,12 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+# Configure root logger to INFO so campaign_runner / adapter logs are visible
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
