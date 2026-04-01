@@ -44,6 +44,7 @@ const failureLabels: Record<string, { label: string; bg: string; text: string }>
   platform_security_check:      { label: '安全检查', bg: 'bg-amber-50', text: 'text-amber-700' },
   platform_checkpoint_redirect: { label: '安全检查', bg: 'bg-amber-50', text: 'text-amber-700' },
   // 系统/AI 问题
+  login_expired:                { label: '登录过期', bg: 'bg-red-50', text: 'text-red-700' },
   greeting_generation_failed:   { label: 'AI 生成失败', bg: 'bg-red-50', text: 'text-red-700' },
   send_exception:               { label: '发送异常', bg: 'bg-red-50', text: 'text-red-700' },
   send_returned_false:          { label: '发送失败', bg: 'bg-red-50', text: 'text-red-700' },

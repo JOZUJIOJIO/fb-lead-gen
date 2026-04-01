@@ -663,6 +663,12 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                                     "Campaign %d: Facebook login expired mid-campaign! Pausing.",
                                     campaign_id,
                                 )
+                                profile_meta2 = lead.raw_profile_data or {}
+                                if isinstance(profile_meta2, dict):
+                                    profile_meta2["failure_code"] = "login_expired"
+                                    profile_meta2["failure_step"] = "send_message"
+                                    profile_meta2["failure_reason"] = "Facebook 登录已过期"
+                                lead.raw_profile_data = profile_meta2
                                 lead.status = LeadStatus.failed
                                 campaign.status = CampaignStatus.paused
                                 await session.commit()

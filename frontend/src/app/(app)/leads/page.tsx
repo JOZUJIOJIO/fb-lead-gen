@@ -27,6 +27,12 @@ interface Lead {
 
 interface LeadDetail extends Lead {
   messages?: { id: number; direction: string; content: string; ai_generated: boolean; created_at: string }[];
+  raw_profile_data?: {
+    recent_posts?: unknown[];
+    failure_code?: string;
+    failure_reason?: string;
+    failure_detail?: string;
+  };
 }
 
 function getLeadQuality(lead: Lead): { color: string; label: string } {
@@ -323,6 +329,22 @@ export default function LeadsPage() {
                             <a href={expandedDetail.profile_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs text-[#0071e3] hover:underline">
                               查看主页
                             </a>
+                          )}
+                          {/* Failure reason display */}
+                          {(expandedDetail.status === 'failed' || expandedDetail.status === 'blacklisted') && (
+                            <div className="mt-3 rounded-xl bg-red-50 border border-red-100 px-3 py-2.5">
+                              <p className="text-xs font-medium text-red-700 mb-0.5">
+                                {expandedDetail.status === 'blacklisted' ? '屏蔽原因' : '失败原因'}
+                              </p>
+                              <p className="text-sm text-red-600">
+                                {expandedDetail.raw_profile_data?.failure_reason
+                                  || expandedDetail.raw_profile_data?.failure_code
+                                  || (expandedDetail.status === 'blacklisted' ? '历史记录（旧版本未记录具体原因，可能是页面加载问题，建议点击重试）' : '未知原因（旧版本未记录，建议点击重试）')}
+                              </p>
+                              {expandedDetail.raw_profile_data?.failure_detail && (
+                                <p className="mt-1 text-xs text-red-400">{expandedDetail.raw_profile_data.failure_detail}</p>
+                              )}
+                            </div>
                           )}
                         </div>
                         {/* Message History — Chat Bubbles */}
