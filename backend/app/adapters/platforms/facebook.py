@@ -469,14 +469,12 @@ class FacebookAdapter(PlatformAdapter):
     ]
 
     async def send_message(self, profile_url: str, message: str) -> dict:
-        """Send a direct message to a Facebook user.
+        """Send a direct message via Facebook Messenger.
 
-        Returns a dict: {"success": bool, "failure_code": str|None}
-        Failure codes:
-          - message_button_not_found
-          - message_input_not_found
-          - message_send_not_confirmed
-          - send_exception
+        PRIMARY PATH: Navigate directly to /messages/t/{uid} — avoids profile
+        page button confusion (评论框 vs 私信框).
+
+        Returns {"success": bool, "failure_code": str|None}
         """
         if not self._page:
             raise RuntimeError("Adapter not initialized. Call initialize() first.")
@@ -484,128 +482,43 @@ class FacebookAdapter(PlatformAdapter):
         page = self._page
 
         try:
-            await page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
-            await _random_delay(3, 5)
-            await _random_mouse_move(page)
-
-            # ---- Step 1: Find and click Message button ----
-            message_btn = None
-            for sel in self._MSG_BTN_SELECTORS:
-                message_btn = await page.query_selector(sel)
-                if message_btn:
-                    break
-
-            # JS fallback: find the button by Messenger SVG icon or nearby structure
-            if not message_btn:
-                message_btn = await page.evaluate_handle("""() => {
-                    // Strategy 1: Find by Messenger SVG path (the chat-bubble icon)
-                    const svgs = document.querySelectorAll('svg');
-                    for (const svg of svgs) {
-                        const path = svg.querySelector('path');
-                        if (path) {
-                            const d = path.getAttribute('d') || '';
-                            // Facebook Messenger icon has distinctive path starting points
-                            if (d.includes('M12') && (d.includes('C5.37') || d.includes('c-4.97'))) {
-                                const btn = svg.closest('[role="button"], a, button');
-                                if (btn) return btn;
-                            }
-                        }
-                    }
-                    // Strategy 2: Find action buttons row, pick the one next to "Add friend"
-                    const buttons = document.querySelectorAll('[role="button"]');
-                    for (const btn of buttons) {
-                        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-                        if (label.includes('message') || label.includes('消息') || label.includes('发消息')) {
-                            return btn;
-                        }
-                    }
-                    // Strategy 3: Profile action bar — second or third button after the blue primary
-                    const actionBtns = document.querySelectorAll('div[data-pagelet="ProfileActions"] [role="button"], div.x1qjc9v5 [role="button"]');
-                    if (actionBtns.length >= 2) {
-                        // Skip the first (usually Add Friend), take the second (usually Message)
-                        return actionBtns[1];
-                    }
-                    return null;
-                }""")
-                if message_btn:
-                    # evaluate_handle returns JSHandle; check if it's usable
-                    try:
-                        tag = await message_btn.evaluate("el => el.tagName")
-                        if not tag:
-                            message_btn = None
-                    except Exception:
-                        message_btn = None
-
-            if not message_btn:
-                # Last resort: go directly to Messenger
-                messenger_url = await self._get_messenger_url(page, profile_url)
-                if messenger_url:
-                    logger.info("send_message: no Message button, trying Messenger direct: %s", messenger_url)
-                    await page.goto(messenger_url, wait_until="domcontentloaded", timeout=30000)
-                    await _random_delay(3, 5)
-                    msg_input = await self._find_message_input(page)
-                    if msg_input:
-                        # Skip button click, go straight to typing
-                        await msg_input.click()
-                        await _random_delay(0.5, 1.0)
-                        for char in message:
-                            await page.keyboard.type(char)
-                            await asyncio.sleep(random.uniform(0.05, 0.15))
-                        await _random_delay(1, 2)
-                        await page.keyboard.press("Enter")
-                        await _random_delay(2, 3)
-                        logger.info("send_message: sent via Messenger direct to %s", profile_url)
-                        return {"success": True, "failure_code": None}
-
-                logger.error("send_message: Message button not found on %s", profile_url)
-                await _save_screenshot(page, "no_message_btn")
+            # ---- Step 1: Go to Messenger directly ----
+            messenger_url = await self._get_messenger_url(page, profile_url)
+            if not messenger_url:
+                logger.error("send_message: cannot build Messenger URL from %s", profile_url)
                 return {"success": False, "failure_code": "message_button_not_found"}
 
-            await message_btn.click()
-            await _random_delay(2, 4)
+            logger.info("send_message: navigating to Messenger %s", messenger_url)
+            await page.goto(messenger_url, wait_until="domcontentloaded", timeout=30000)
+            await _random_delay(3, 5)
 
-            # ---- Step 1a: Dismiss any blocking dialogs (PIN code, etc.) ----
+            # ---- Step 2: Dismiss blocking dialogs (PIN, etc.) ----
             await self._dismiss_blocking_dialogs(page)
 
-            # ---- Step 1b: Detect platform restrictions ----
+            # ---- Step 3: Detect platform restrictions ----
             restriction = await self._detect_platform_restriction(page)
             if restriction:
-                logger.warning(
-                    "send_message: platform restriction detected on %s: %s",
-                    profile_url, restriction,
-                )
+                logger.warning("send_message: restriction on %s: %s", profile_url, restriction)
                 await _save_screenshot(page, "platform_restricted")
                 return {"success": False, "failure_code": restriction}
 
-            # ---- Step 2: Find message input ----
-            msg_input = await self._find_message_input(page)
+            # ---- Step 4: Find the Messenger input box ----
+            msg_input = await self._find_messenger_input(page)
 
-            # Retry once: maybe a Messenger redirect happened
             if not msg_input:
                 await _random_delay(2, 3)
-                # Check again for restrictions that may have appeared after delay
+                await self._dismiss_blocking_dialogs(page)
                 restriction = await self._detect_platform_restriction(page)
                 if restriction:
-                    logger.warning("send_message: restriction after retry on %s: %s", profile_url, restriction)
-                    await _save_screenshot(page, "platform_restricted_retry")
                     return {"success": False, "failure_code": restriction}
-                msg_input = await self._find_message_input(page)
-
-            # Fallback: try navigating to Messenger directly
-            if not msg_input:
-                messenger_url = await self._get_messenger_url(page, profile_url)
-                if messenger_url:
-                    logger.info("send_message: falling back to Messenger URL %s", messenger_url)
-                    await page.goto(messenger_url, wait_until="domcontentloaded", timeout=30000)
-                    await _random_delay(3, 5)
-                    msg_input = await self._find_message_input(page)
+                msg_input = await self._find_messenger_input(page)
 
             if not msg_input:
-                logger.error("send_message: Message input not found after retries for %s", profile_url)
+                logger.error("send_message: input not found on Messenger for %s", profile_url)
                 await _save_screenshot(page, "no_msg_input")
                 return {"success": False, "failure_code": "message_input_not_found"}
 
-            # ---- Step 3: Type and send ----
+            # ---- Step 5: Type and send ----
             await msg_input.click()
             await _random_delay(0.5, 1.0)
             for char in message:
@@ -613,18 +526,50 @@ class FacebookAdapter(PlatformAdapter):
                 await asyncio.sleep(random.uniform(0.05, 0.15))
 
             await _random_delay(1, 2)
-
-            # Try Enter key, then fall back to clicking Send button
             await page.keyboard.press("Enter")
             await _random_delay(2, 3)
 
-            logger.info("send_message: message sent to %s (%d chars)", profile_url, len(message))
+            logger.info("send_message: sent to %s via Messenger (%d chars)", profile_url, len(message))
             return {"success": True, "failure_code": None}
 
         except Exception as e:
             logger.error("send_message failed for %s: %s", profile_url, e)
             await _save_screenshot(page, "send_error")
             return {"success": False, "failure_code": "send_exception"}
+
+    async def _find_messenger_input(self, page: Page):
+        """Find the message input on the Messenger page (NOT profile page).
+
+        Only matches inputs inside the Messenger conversation area,
+        never matches post comment boxes.
+        """
+        # Messenger-specific selectors (much narrower than profile page)
+        messenger_selectors = [
+            # Messenger's own input (aria-label contains message/Aa/消息)
+            'div[aria-label*="message" i][contenteditable="true"][role="textbox"]',
+            'div[aria-label*="消息"][contenteditable="true"][role="textbox"]',
+            'div[aria-label*="Aa"][contenteditable="true"][role="textbox"]',
+            # Lexical editor on Messenger
+            'div[data-lexical-editor="true"][contenteditable="true"][role="textbox"]',
+            # Generic textbox but only inside the main messenger area
+            'div[role="main"] div[role="textbox"][contenteditable="true"]',
+        ]
+
+        for sel in messenger_selectors:
+            try:
+                el = await page.wait_for_selector(sel, timeout=5000)
+                if el:
+                    return el
+            except Exception:
+                pass
+
+        # Individual query as fallback
+        for sel in messenger_selectors:
+            el = await page.query_selector(sel)
+            if el:
+                return el
+
+        return None
 
     async def _dismiss_blocking_dialogs(self, page: Page) -> None:
         """Close blocking dialogs like PIN code setup, cookie consent, etc."""
