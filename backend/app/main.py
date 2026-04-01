@@ -87,6 +87,41 @@ async def seed_default_personas():
         await session.commit()
 
 
+async def recover_interrupted_campaigns():
+    """On startup, reset campaigns stuck in 'running' and leads stuck in 'analyzing'."""
+    async with async_session() as session:
+        # Reset running campaigns to paused (they lost their asyncio task on restart)
+        from app.models import CampaignStatus, LeadStatus
+        result = await session.execute(
+            select(Campaign).where(Campaign.status == CampaignStatus.running)
+        )
+        stuck_campaigns = result.scalars().all()
+        for c in stuck_campaigns:
+            logging.getLogger(__name__).info(
+                "Recovering campaign %d (%s): running → paused", c.id, c.name
+            )
+            c.status = CampaignStatus.paused
+
+        # Reset analyzing leads to found (they were mid-processing when server stopped)
+        from app.models import Lead
+        result2 = await session.execute(
+            select(Lead).where(Lead.status == LeadStatus.analyzing)
+        )
+        stuck_leads = result2.scalars().all()
+        for l in stuck_leads:
+            logging.getLogger(__name__).info(
+                "Recovering lead %d (%s): analyzing → found", l.id, l.name
+            )
+            l.status = LeadStatus.found
+
+        if stuck_campaigns or stuck_leads:
+            await session.commit()
+            logging.getLogger(__name__).info(
+                "Recovery complete: %d campaigns, %d leads reset",
+                len(stuck_campaigns), len(stuck_leads),
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create tables and seed data
@@ -94,6 +129,9 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     await seed_default_admin()
     await seed_default_personas()
+
+    # Recover campaigns that were running when the server stopped
+    await recover_interrupted_campaigns()
 
     # Start auto-reply service if enabled
     if settings.AUTO_REPLY_ENABLED:
