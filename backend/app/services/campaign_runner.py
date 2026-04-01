@@ -77,6 +77,12 @@ def _campaign_to_persona_dict(campaign: Campaign) -> dict:
 
 async def _wait_for_send_window(campaign: "Campaign") -> None:
     """If current time is outside the campaign's send window, sleep until it opens."""
+    start, end = campaign.send_hour_start, campaign.send_hour_end
+
+    # 0-24 or 0-0 means "always send"
+    if (start == 0 and end >= 24) or (start == 0 and end == 0):
+        return
+
     try:
         tz = ZoneInfo(campaign.timezone)
     except Exception:
@@ -85,7 +91,6 @@ async def _wait_for_send_window(campaign: "Campaign") -> None:
     while True:
         now = datetime.now(tz)
         hour = now.hour
-        start, end = campaign.send_hour_start, campaign.send_hour_end
 
         if start <= end:
             in_window = start <= hour < end

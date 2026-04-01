@@ -29,8 +29,8 @@ export default function NewCampaignPage() {
   const [sendLimit, setSendLimit] = useState(20);
   const [maxPerHour, setMaxPerHour] = useState(10);
   const [reviewMode, setReviewMode] = useState(false);
-  const [sendHourStart, setSendHourStart] = useState(9);
-  const [sendHourEnd, setSendHourEnd] = useState(18);
+  const [sendHourStart, setSendHourStart] = useState(0);
+  const [sendHourEnd, setSendHourEnd] = useState(24);
   const [campaignName, setCampaignName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
@@ -422,28 +422,42 @@ export default function NewCampaignPage() {
             {/* Time Window */}
             <div>
               <span className="text-sm font-medium text-[#1d1d1f]">发送时间窗口</span>
-              <p className="text-xs text-[#86868b] mt-0.5 mb-2">只在指定时段内发送消息，避免深夜打扰</p>
-              <div className="flex items-center gap-2">
-                <select
-                  value={sendHourStart}
-                  onChange={(e) => setSendHourStart(Number(e.target.value))}
-                  className="rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-3 py-2 text-sm text-[#1d1d1f] outline-none focus:border-[#0071e3] focus:bg-white"
-                >
-                  {Array.from({ length: 24 }, (_, i) => (
-                    <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-                  ))}
-                </select>
-                <span className="text-sm text-[#86868b]">至</span>
-                <select
-                  value={sendHourEnd}
-                  onChange={(e) => setSendHourEnd(Number(e.target.value))}
-                  className="rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-3 py-2 text-sm text-[#1d1d1f] outline-none focus:border-[#0071e3] focus:bg-white"
-                >
-                  {Array.from({ length: 24 }, (_, i) => (
-                    <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-                  ))}
-                </select>
-              </div>
+              <p className="text-xs text-[#86868b] mt-0.5 mb-2">限制消息发送的时间段</p>
+              <label className="mb-3 inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sendHourStart === 0 && sendHourEnd === 24}
+                  onChange={(e) => {
+                    if (e.target.checked) { setSendHourStart(0); setSendHourEnd(24); }
+                    else { setSendHourStart(9); setSendHourEnd(18); }
+                  }}
+                  className="h-4 w-4 rounded border-[#e5e5e7] text-[#0071e3] focus:ring-[#0071e3]"
+                />
+                <span className="text-sm text-[#1d1d1f]">24 小时不限</span>
+              </label>
+              {!(sendHourStart === 0 && sendHourEnd === 24) && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={sendHourStart}
+                    onChange={(e) => setSendHourStart(Number(e.target.value))}
+                    className="rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-3 py-2 text-sm text-[#1d1d1f] outline-none focus:border-[#0071e3] focus:bg-white"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-[#86868b]">至</span>
+                  <select
+                    value={sendHourEnd}
+                    onChange={(e) => setSendHourEnd(Number(e.target.value))}
+                    className="rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-3 py-2 text-sm text-[#1d1d1f] outline-none focus:border-[#0071e3] focus:bg-white"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             {/* Timezone */}
             <div>
