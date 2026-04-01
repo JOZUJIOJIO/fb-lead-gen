@@ -365,8 +365,47 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                 target_new=campaign.send_limit,
             )
 
+            # 3c. If no results, AI expands keywords and retries (up to 2 times)
             if not search_results:
-                logger.warning("Campaign %d: no new results found for '%s'", campaign_id, chosen_keyword)
+                for expand_round in range(2):
+                    logger.info(
+                        "Campaign %d: no new results for '%s', asking AI to expand keywords (round %d)",
+                        campaign_id, chosen_keyword, expand_round + 1,
+                    )
+                    try:
+                        from app.services.ai_service import _get_provider_config, _default_model, _call_openai_compatible, _call_anthropic
+                        provider, base_url, api_key = _get_provider_config()
+                        model = _default_model(provider)
+                        expand_prompt = (
+                            f"I searched Facebook for people using the keyword '{chosen_keyword}' "
+                            f"(industry: {campaign.search_industry or 'any'}, region: {campaign.search_region or 'any'}) "
+                            f"but found no new results. Suggest ONE alternative search keyword that targets "
+                            f"a similar audience but uses different wording. "
+                            f"Output ONLY the keyword, nothing else. Keep it under 5 words."
+                        )
+                        if provider == "anthropic":
+                            expanded = await _call_anthropic(api_key, model, "You suggest search keywords.", expand_prompt)
+                        else:
+                            expanded = await _call_openai_compatible(base_url, api_key, model, "You suggest search keywords.", expand_prompt)
+                        expanded = expanded.strip().strip('"').strip("'")
+                        logger.info("Campaign %d: AI suggested keyword: '%s'", campaign_id, expanded)
+
+                        search_results = await adapter.search_people(
+                            keywords=expanded,
+                            region=campaign.search_region or "",
+                            industry=campaign.search_industry or "",
+                            known_uids=all_known_uids,
+                            target_new=campaign.send_limit,
+                        )
+                        if search_results:
+                            chosen_keyword = expanded
+                            break
+                    except Exception as e:
+                        logger.warning("Campaign %d: AI keyword expansion failed: %s", campaign_id, e)
+                        break
+
+            if not search_results:
+                logger.warning("Campaign %d: no new results found (including AI expansion)", campaign_id)
                 campaign.status = CampaignStatus.completed
                 campaign.progress_total = 0
                 await session.commit()

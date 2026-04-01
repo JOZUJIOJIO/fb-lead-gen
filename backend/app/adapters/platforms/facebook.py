@@ -522,36 +522,33 @@ class FacebookAdapter(PlatformAdapter):
 
             logger.info("send_message: navigating to Messenger %s", messenger_url)
             await page.goto(messenger_url, wait_until="domcontentloaded", timeout=30000)
-            await _random_delay(3, 5)
+            await _random_delay(4, 6)
 
-            # ---- Step 2: Dismiss blocking dialogs (PIN, etc.) ----
-            await self._dismiss_blocking_dialogs(page)
-
-            # ---- Step 3: Detect platform restrictions ----
-            restriction = await self._detect_platform_restriction(page)
-            if restriction:
-                logger.warning("send_message: restriction on %s: %s", profile_url, restriction)
-                await _save_screenshot(page, "platform_restricted")
-                return {"success": False, "failure_code": restriction}
-
-            # ---- Step 4: Find the Messenger input box ----
-            # Dismiss again — PIN dialog may still be covering the input
-            await self._dismiss_blocking_dialogs(page)
-            await _random_delay(1, 2)
-
-            msg_input = await self._find_messenger_input(page)
-
-            if not msg_input:
-                # Retry: dismiss once more and wait longer
+            # ---- Step 2-4: Dismiss dialogs + find input (up to 3 attempts) ----
+            msg_input = None
+            for attempt in range(3):
                 await self._dismiss_blocking_dialogs(page)
-                await _random_delay(2, 3)
+                await _random_delay(1, 2)
+
+                # Check for platform restrictions
                 restriction = await self._detect_platform_restriction(page)
                 if restriction:
+                    logger.warning("send_message: restriction on %s: %s", profile_url, restriction)
+                    await _save_screenshot(page, "platform_restricted")
                     return {"success": False, "failure_code": restriction}
+
                 msg_input = await self._find_messenger_input(page)
+                if msg_input:
+                    break
+
+                logger.info(
+                    "send_message: input not found (attempt %d/3), waiting longer...",
+                    attempt + 1,
+                )
+                await _random_delay(3, 5)
 
             if not msg_input:
-                logger.error("send_message: input not found on Messenger for %s", profile_url)
+                logger.error("send_message: input not found on Messenger for %s after 3 attempts", profile_url)
                 await _save_screenshot(page, "no_msg_input")
                 return {"success": False, "failure_code": "message_input_not_found"}
 
@@ -580,7 +577,7 @@ class FacebookAdapter(PlatformAdapter):
         Only matches inputs inside the Messenger conversation area,
         never matches post comment boxes.
         """
-        # Messenger-specific selectors (much narrower than profile page)
+        # Messenger-specific selectors (narrowest → broadest)
         messenger_selectors = [
             # Messenger's own input (aria-label contains message/Aa/消息)
             'div[aria-label*="message" i][contenteditable="true"][role="textbox"]',
@@ -590,17 +587,21 @@ class FacebookAdapter(PlatformAdapter):
             'div[data-lexical-editor="true"][contenteditable="true"][role="textbox"]',
             # Generic textbox but only inside the main messenger area
             'div[role="main"] div[role="textbox"][contenteditable="true"]',
+            # Broader fallbacks for newer Messenger layouts
+            'div[contenteditable="true"][role="textbox"]',
+            'div[role="main"] div[contenteditable="true"]',
         ]
 
+        # First pass: wait for each selector with timeout
         for sel in messenger_selectors:
             try:
-                el = await page.wait_for_selector(sel, timeout=5000)
+                el = await page.wait_for_selector(sel, timeout=4000)
                 if el:
                     return el
             except Exception:
                 pass
 
-        # Individual query as fallback
+        # Second pass: direct query without waiting
         for sel in messenger_selectors:
             el = await page.query_selector(sel)
             if el:
