@@ -323,15 +323,50 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
         logger.info("Campaign %d: Facebook login verified", campaign_id)
 
         try:
-            # 3. Search people
+            # 3. Collect all known UIDs (processed + blacklisted + contacted) for smart search
+            already_processed = await _get_already_processed_uids(session, campaign_id)
+            if already_processed:
+                logger.info(
+                    "Campaign %d: resuming — %d leads already processed",
+                    campaign_id, len(already_processed),
+                )
+
+            # Collect globally known UIDs to skip during search
+            all_known_uids = set(already_processed)
+            from sqlalchemy import select as sa_select
+            global_uids_result = await session.execute(
+                sa_select(Lead.platform_user_id).where(
+                    Lead.platform == PlatformEnum.facebook,
+                    Lead.platform_user_id.is_not(None),
+                )
+            )
+            for uid in global_uids_result.scalars().all():
+                if uid:
+                    all_known_uids.add(uid)
+
+            # 3a. Multi-keyword: pick one random keyword to search
+            raw_keywords = campaign.search_keywords or ""
+            keyword_list = [k.strip() for k in raw_keywords.replace("，", ",").split(",") if k.strip()]
+            if len(keyword_list) > 1:
+                chosen_keyword = random.choice(keyword_list)
+                logger.info(
+                    "Campaign %d: multiple keywords detected (%d), randomly chose: '%s'",
+                    campaign_id, len(keyword_list), chosen_keyword,
+                )
+            else:
+                chosen_keyword = raw_keywords
+
+            # 3b. Search — skips known UIDs and scrolls until enough new people found
             search_results = await adapter.search_people(
-                keywords=campaign.search_keywords or "",
+                keywords=chosen_keyword,
                 region=campaign.search_region or "",
                 industry=campaign.search_industry or "",
+                known_uids=all_known_uids,
+                target_new=campaign.send_limit,
             )
 
             if not search_results:
-                logger.warning("Campaign %d: no search results found", campaign_id)
+                logger.warning("Campaign %d: no new results found for '%s'", campaign_id, chosen_keyword)
                 campaign.status = CampaignStatus.completed
                 campaign.progress_total = 0
                 await session.commit()
@@ -340,14 +375,6 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
             # Cap to send_limit
             targets = search_results[: campaign.send_limit]
             campaign.progress_total = len(targets)
-
-            # 3b. Get already-processed UIDs for resume
-            already_processed = await _get_already_processed_uids(session, campaign_id)
-            if already_processed:
-                logger.info(
-                    "Campaign %d: resuming — %d leads already processed",
-                    campaign_id, len(already_processed),
-                )
 
             await session.commit()
 

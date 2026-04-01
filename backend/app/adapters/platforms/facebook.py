@@ -204,13 +204,23 @@ class FacebookAdapter(PlatformAdapter):
         keywords: str,
         region: str = "",
         industry: str = "",
+        known_uids: set[str] | None = None,
+        target_new: int = 20,
     ) -> list[dict]:
-        """Search Facebook for people matching the given criteria."""
+        """Search Facebook for people matching the given criteria.
+
+        Args:
+            known_uids: UIDs to skip (already processed/blacklisted).
+            target_new: Keep scrolling until this many NEW people are found
+                        (or page has no more results). Max 10 scroll rounds.
+        """
         if not self._page:
             raise RuntimeError("Adapter not initialized. Call initialize() first.")
 
         page = self._page
         results: list[dict] = []
+        skip_uids = known_uids or set()
+        seen_urls: set[str] = set()
 
         try:
             query_parts = [keywords]
@@ -225,66 +235,88 @@ class FacebookAdapter(PlatformAdapter):
             await _random_delay(3, 6)
             await _random_mouse_move(page)
 
-            await _human_scroll(page, times=4)
-            await _random_delay(2, 4)
+            # Scroll in rounds — keep going until enough new people or no more results
+            max_scroll_rounds = 10
+            for scroll_round in range(max_scroll_rounds):
+                await _human_scroll(page, times=3)
+                await _random_delay(2, 4)
 
-            result_links = await page.query_selector_all(
-                'div[role="article"] a[role="presentation"], '
-                'div[data-pagelet*="SearchResult"] a[href*="/profile.php"], '
-                'div[data-pagelet*="SearchResult"] a[href*="facebook.com/"]'
-            )
+                result_links = await page.query_selector_all(
+                    'div[role="article"] a[role="presentation"], '
+                    'div[data-pagelet*="SearchResult"] a[href*="/profile.php"], '
+                    'div[data-pagelet*="SearchResult"] a[href*="facebook.com/"]'
+                )
 
-            seen_urls: set[str] = set()
-
-            for link in result_links[:30]:
-                try:
-                    href = await link.get_attribute("href") or ""
-                    if not href or href in seen_urls:
-                        continue
-                    if "/profile.php" not in href and "facebook.com/" not in href:
-                        continue
-                    if "/search/" in href or "/hashtag/" in href:
-                        continue
-
-                    seen_urls.add(href)
-
-                    name = (await link.inner_text()).strip()
-                    if not name:
-                        name_el = await link.query_selector("span")
-                        if name_el:
-                            name = (await name_el.inner_text()).strip()
-
-                    parent = await link.evaluate_handle("el => el.closest('div[role=\"article\"]') || el.parentElement.parentElement")
-                    snippet = ""
+                new_in_round = 0
+                for link in result_links:
                     try:
-                        snippet_text = await parent.evaluate("el => el.innerText")
-                        if name and name in snippet_text:
-                            snippet = snippet_text.split(name, 1)[-1].strip()[:200]
+                        href = await link.get_attribute("href") or ""
+                        if not href or href in seen_urls:
+                            continue
+                        if "/profile.php" not in href and "facebook.com/" not in href:
+                            continue
+                        if "/search/" in href or "/hashtag/" in href:
+                            continue
+
+                        seen_urls.add(href)
+
+                        platform_user_id = ""
+                        if "profile.php?id=" in href:
+                            platform_user_id = href.split("id=")[1].split("&")[0]
                         else:
-                            snippet = snippet_text[:200]
-                    except Exception:
-                        pass
+                            parts = href.rstrip("/").split("/")
+                            platform_user_id = parts[-1] if parts else ""
 
-                    platform_user_id = ""
-                    if "profile.php?id=" in href:
-                        platform_user_id = href.split("id=")[1].split("&")[0]
-                    else:
-                        parts = href.rstrip("/").split("/")
-                        platform_user_id = parts[-1] if parts else ""
+                        # Skip already known UIDs
+                        if platform_user_id and platform_user_id in skip_uids:
+                            continue
 
-                    if name:
-                        results.append({
-                            "platform_user_id": platform_user_id,
-                            "name": name,
-                            "profile_url": href.split("?")[0] if "profile.php" not in href else href,
-                            "snippet": snippet,
-                        })
+                        name = (await link.inner_text()).strip()
+                        if not name:
+                            name_el = await link.query_selector("span")
+                            if name_el:
+                                name = (await name_el.inner_text()).strip()
 
-                except Exception as e:
-                    logger.debug("Failed to parse a search result: %s", e)
-                    continue
+                        parent = await link.evaluate_handle("el => el.closest('div[role=\"article\"]') || el.parentElement.parentElement")
+                        snippet = ""
+                        try:
+                            snippet_text = await parent.evaluate("el => el.innerText")
+                            if name and name in snippet_text:
+                                snippet = snippet_text.split(name, 1)[-1].strip()[:200]
+                            else:
+                                snippet = snippet_text[:200]
+                        except Exception:
+                            pass
 
-            logger.info("search_people: found %d results for '%s'", len(results), query)
+                        if name:
+                            results.append({
+                                "platform_user_id": platform_user_id,
+                                "name": name,
+                                "profile_url": href.split("?")[0] if "profile.php" not in href else href,
+                                "snippet": snippet,
+                            })
+                            new_in_round += 1
+
+                    except Exception as e:
+                        logger.debug("Failed to parse a search result: %s", e)
+                        continue
+
+                new_count = len(results)
+                logger.info(
+                    "search_people: round %d/%d — %d new this round, %d total new for '%s'",
+                    scroll_round + 1, max_scroll_rounds, new_in_round, new_count, query,
+                )
+
+                # Stop if we have enough new people
+                if new_count >= target_new:
+                    break
+
+                # Stop if no new results in this round (reached bottom)
+                if new_in_round == 0:
+                    logger.info("search_people: no new results in round %d, stopping scroll", scroll_round + 1)
+                    break
+
+            logger.info("search_people: found %d new results for '%s'", len(results), query)
 
         except Exception as e:
             logger.error("search_people failed: %s", e)
