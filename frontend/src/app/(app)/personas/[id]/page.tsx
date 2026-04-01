@@ -46,6 +46,7 @@ export default function PersonaDetailPage({ params }: { params: { id: string } }
   const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
     // 1. Try loading from localStorage first (instant)
@@ -89,6 +90,16 @@ export default function PersonaDetailPage({ params }: { params: { id: string } }
       })
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  // Warn before leaving with unsaved changes
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  const markDirty = () => { if (!isDirty) setIsDirty(true); };
 
   const addProduct = () => {
     if (productInput.trim() && !products.includes(productInput.trim())) {
@@ -216,7 +227,7 @@ ${conversationRules || '[对话规则]'}`;
           <input
             type="text"
             value={personaName}
-            onChange={(e) => setPersonaName(e.target.value)}
+            onChange={(e) => { setPersonaName(e.target.value); markDirty(); }}
             placeholder="例如：专业商务顾问"
             className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
           />
@@ -241,7 +252,7 @@ ${conversationRules || '[对话规则]'}`;
               <input
                 type="text"
                 value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
+                onChange={(e) => { setCompanyName(e.target.value); markDirty(); }}
                 placeholder="例如：TechBridge"
                 className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
               />
@@ -250,7 +261,7 @@ ${conversationRules || '[对话规则]'}`;
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">公司描述</label>
               <textarea
                 value={companyDesc}
-                onChange={(e) => setCompanyDesc(e.target.value)}
+                onChange={(e) => { setCompanyDesc(e.target.value); markDirty(); }}
                 placeholder="简要描述公司业务和优势..."
                 rows={3}
                 className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
@@ -299,7 +310,7 @@ ${conversationRules || '[对话规则]'}`;
               <input
                 type="text"
                 value={salesName}
-                onChange={(e) => setSalesName(e.target.value)}
+                onChange={(e) => { setSalesName(e.target.value); markDirty(); }}
                 placeholder="例如：张伟"
                 className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
               />
@@ -309,7 +320,7 @@ ${conversationRules || '[对话规则]'}`;
               <input
                 type="text"
                 value={salesTitle}
-                onChange={(e) => setSalesTitle(e.target.value)}
+                onChange={(e) => { setSalesTitle(e.target.value); markDirty(); }}
                 placeholder="例如：商务经理"
                 className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
               />
@@ -325,7 +336,7 @@ ${conversationRules || '[对话规则]'}`;
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">语气风格</label>
               <select
                 value={tone}
-                onChange={(e) => setTone(e.target.value)}
+                onChange={(e) => { setTone(e.target.value); markDirty(); }}
                 className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
               >
                 <option value="professional">专业正式</option>
@@ -338,7 +349,7 @@ ${conversationRules || '[对话规则]'}`;
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">打招呼规则</label>
               <textarea
                 value={greetingRules}
-                onChange={(e) => setGreetingRules(e.target.value)}
+                onChange={(e) => { setGreetingRules(e.target.value); markDirty(); }}
                 placeholder="定义 AI 如何开始对话..."
                 rows={3}
                 className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
@@ -348,7 +359,7 @@ ${conversationRules || '[对话规则]'}`;
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">对话规则</label>
               <textarea
                 value={conversationRules}
-                onChange={(e) => setConversationRules(e.target.value)}
+                onChange={(e) => { setConversationRules(e.target.value); markDirty(); }}
                 placeholder="定义后续对话的规则..."
                 rows={3}
                 className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
@@ -379,9 +390,13 @@ ${conversationRules || '[对话规则]'}`;
         </div>
 
         {/* Submit */}
-        <div className="flex justify-end gap-3 pt-2">
+        <div className="flex items-center justify-end gap-3 pt-2">
+          {isDirty && (
+            <span className="text-xs text-amber-600 mr-auto">有未保存的修改</span>
+          )}
           <Link
             href="/personas"
+            onClick={(e) => { if (isDirty && !confirm('有未保存的修改，确定离开？')) e.preventDefault(); }}
             className="rounded-full border border-[#e5e5e7] px-6 py-2.5 text-sm font-medium text-[#1d1d1f] transition-colors hover:bg-[#f5f5f7]"
           >
             取消

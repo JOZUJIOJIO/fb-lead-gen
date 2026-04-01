@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Star, Building2, User, Palette, Trash2 } from 'lucide-react';
+import { Plus, Star, Building2, User, Palette, Trash2, MessageSquare, CheckCircle } from 'lucide-react';
 import { personaApi } from '@/lib/api';
 import { personaStore, type LocalPersona } from '@/lib/localStore';
 
@@ -12,6 +12,8 @@ interface Persona {
   company_name: string | null;
   salesperson_name: string | null;
   tone: string | null;
+  greeting_rules: { text?: string } | null;
+  conversation_rules: { text?: string } | null;
   is_default: boolean;
 }
 
@@ -136,6 +138,23 @@ export default function PersonasPage() {
                 <span className="inline-flex rounded-full bg-[#f5f5f7] px-2.5 py-0.5 text-xs font-medium text-[#86868b]">
                   {toneLabels[persona.tone || ''] || persona.tone || '-'}
                 </span>
+              </div>
+              {/* Rules status */}
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-[#86868b]" />
+                <div className="flex items-center gap-1.5">
+                  {persona.greeting_rules?.text ? (
+                    <span className="inline-flex items-center gap-0.5 text-xs text-emerald-600"><CheckCircle className="h-3 w-3" />打招呼</span>
+                  ) : (
+                    <span className="text-xs text-[#c1c1c4]">打招呼未配</span>
+                  )}
+                  <span className="text-[#e5e5e7]">·</span>
+                  {persona.conversation_rules?.text ? (
+                    <span className="inline-flex items-center gap-0.5 text-xs text-emerald-600"><CheckCircle className="h-3 w-3" />对话</span>
+                  ) : (
+                    <span className="text-xs text-[#c1c1c4]">对话未配</span>
+                  )}
+                </div>
               </div>
             </div>
           </Link>

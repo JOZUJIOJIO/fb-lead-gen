@@ -19,6 +19,7 @@ interface Lead {
   status: string;
   campaign_id: number;
   bio: string | null;
+  industry: string | null;
   profile_url: string | null;
   created_at: string;
 }
@@ -229,6 +230,7 @@ export default function LeadsPage() {
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">姓名</th>
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">平台</th>
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">状态</th>
+              <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">行业</th>
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">简介</th>
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">日期</th>
               <th className="w-10 px-6 py-3.5" />
@@ -237,12 +239,12 @@ export default function LeadsPage() {
           <tbody className="divide-y divide-[#e5e5e7]/40">
             {loading && (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td>
+                <td colSpan={8} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td>
               </tr>
             )}
             {!loading && leads.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-sm text-[#86868b]">暂无线索数据</td>
+                <td colSpan={8} className="px-6 py-12 text-center text-sm text-[#86868b]">暂无线索数据</td>
               </tr>
             )}
             {leads.map((lead) => (
@@ -258,6 +260,7 @@ export default function LeadsPage() {
                   <td className="px-6 py-3.5 text-sm font-medium text-[#1d1d1f]">{lead.name || '未知'}</td>
                   <td className="px-6 py-3.5 text-sm text-[#86868b] capitalize">{lead.platform}</td>
                   <td className="px-6 py-3.5"><StatusBadge status={lead.status} /></td>
+                  <td className="px-6 py-3.5 text-sm text-[#86868b]">{lead.industry || '-'}</td>
                   <td className="max-w-[200px] truncate px-6 py-3.5 text-sm text-[#86868b]">{lead.bio || '-'}</td>
                   <td className="px-6 py-3.5 text-sm text-[#86868b]">{new Date(lead.created_at).toLocaleDateString('zh-CN')}</td>
                   <td className="px-6 py-3.5">
@@ -270,7 +273,7 @@ export default function LeadsPage() {
                 </tr>
                 {expandedId === lead.id && expandedDetail && (
                   <tr>
-                    <td colSpan={7} className="bg-[#fafafa] px-6 py-5">
+                    <td colSpan={8} className="bg-[#fafafa] px-6 py-5">
                       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                         {/* Profile */}
                         <div>

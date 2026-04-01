@@ -15,6 +15,7 @@ interface Campaign {
   search_keywords: string | null;
   progress_current: number;
   send_limit: number;
+  max_per_hour: number;
   created_at: string;
   updated_at: string;
 }
@@ -133,15 +134,16 @@ export default function CampaignsPage() {
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">平台</th>
               <th className="px-6 py-3.5 text-left"><SortBtn k="status" label="状态" /></th>
               <th className="px-6 py-3.5 text-left"><SortBtn k="progress" label="进度" /></th>
+              <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-[#86868b]">频率</th>
               <th className="px-6 py-3.5 text-left"><SortBtn k="created_at" label="创建时间" /></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e5e5e7]/40">
             {loading && (
-              <tr><td colSpan={5} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td></tr>
+              <tr><td colSpan={6} className="px-6 py-12 text-center text-sm text-[#86868b]">加载中...</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={5} className="px-6 py-12 text-center text-sm text-[#86868b]">
+              <tr><td colSpan={6} className="px-6 py-12 text-center text-sm text-[#86868b]">
                 {campaigns.length === 0 ? '暂无任务，点击「新建任务」开始' : '没有匹配的任务'}
               </td></tr>
             )}
@@ -170,6 +172,9 @@ export default function CampaignsPage() {
                     </div>
                     <span className="text-xs text-[#86868b]">{campaign.progress_current}/{campaign.send_limit}</span>
                   </div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-xs text-[#86868b]">{campaign.max_per_hour || 10}/小时</span>
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-sm text-[#86868b]">{new Date(campaign.created_at).toLocaleDateString('zh-CN')}</span>
