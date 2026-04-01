@@ -106,7 +106,7 @@ async def _is_already_contacted(session: AsyncSession, platform_user_id: str, pl
         select(Lead.id).where(
             Lead.platform_user_id == platform_user_id,
             Lead.platform == PlatformEnum(platform),
-            Lead.status.not_in([LeadStatus.failed, LeadStatus.blacklisted]),
+            Lead.status.notin_([LeadStatus.failed, LeadStatus.blacklisted]),
         ).limit(1)
     )
     return result.scalar_one_or_none() is not None
