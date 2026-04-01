@@ -502,6 +502,9 @@ class FacebookAdapter(PlatformAdapter):
             await message_btn.click()
             await _random_delay(2, 4)
 
+            # ---- Step 1a: Dismiss any blocking dialogs (PIN code, etc.) ----
+            await self._dismiss_blocking_dialogs(page)
+
             # ---- Step 1b: Detect platform restrictions ----
             restriction = await self._detect_platform_restriction(page)
             if restriction:
@@ -560,6 +563,51 @@ class FacebookAdapter(PlatformAdapter):
             logger.error("send_message failed for %s: %s", profile_url, e)
             await _save_screenshot(page, "send_error")
             return {"success": False, "failure_code": "send_exception"}
+
+    async def _dismiss_blocking_dialogs(self, page: Page) -> None:
+        """Close blocking dialogs like PIN code setup, cookie consent, etc."""
+        try:
+            dismissed = await page.evaluate("""() => {
+                let closed = 0;
+                // Close any dialog by clicking X / close / dismiss buttons
+                const closeSelectors = [
+                    '[aria-label="Close"]',
+                    '[aria-label="关闭"]',
+                    '[aria-label="Close chat"]',
+                    '[aria-label="取消"]',
+                    '[aria-label="Not now"]',
+                    '[aria-label="以后再说"]',
+                    'div[role="dialog"] [aria-label="Close"]',
+                    'div[role="dialog"] [aria-label="关闭"]',
+                ];
+                for (const sel of closeSelectors) {
+                    const btns = document.querySelectorAll(sel);
+                    for (const btn of btns) {
+                        if (btn.offsetParent !== null) {  // visible
+                            btn.click();
+                            closed++;
+                        }
+                    }
+                }
+                // Also try clicking "Not Now" / "以后再说" text buttons
+                const allBtns = document.querySelectorAll('[role="button"], button');
+                for (const btn of allBtns) {
+                    const text = (btn.textContent || '').trim();
+                    if (text === 'Not Now' || text === '以后再说' || text === 'Not now'
+                        || text === '稍后' || text === 'Skip' || text === '跳过') {
+                        if (btn.offsetParent !== null) {
+                            btn.click();
+                            closed++;
+                        }
+                    }
+                }
+                return closed;
+            }""")
+            if dismissed:
+                logger.info("_dismiss_blocking_dialogs: closed %d dialog(s)", dismissed)
+                await _random_delay(1, 2)
+        except Exception as e:
+            logger.debug("_dismiss_blocking_dialogs: %s", e)
 
     async def _find_message_input(self, page: Page):
         """Search for the message input across the main page and any iframes."""
@@ -623,8 +671,12 @@ class FacebookAdapter(PlatformAdapter):
         # Messaging specifically restricted
         ("can't send messages", "platform_messaging_blocked"),
         ("无法发送消息", "platform_messaging_blocked"),
+        ("无法发消息", "platform_messaging_blocked"),
+        ("你无法发消息给这个账户", "platform_messaging_blocked"),
         ("can't message this", "platform_messaging_blocked"),
         ("unable to send", "platform_messaging_blocked"),
+        ("you can't reply", "platform_messaging_blocked"),
+        ("你无法回复", "platform_messaging_blocked"),
         # Checkpoint / security
         ("unusual activity", "platform_unusual_activity"),
         ("异常活动", "platform_unusual_activity"),
@@ -645,9 +697,10 @@ class FacebookAdapter(PlatformAdapter):
             if "/checkpoint" in url:
                 return "platform_checkpoint_redirect"
 
-            # Grab visible text from likely dialog/overlay containers
+            # Grab visible text from dialogs AND page body (check both)
             text = await page.evaluate("""() => {
-                // Look in dialogs and overlays first
+                const parts = [];
+                // Collect dialog/overlay text
                 const containers = [
                     ...document.querySelectorAll('[role="dialog"]'),
                     ...document.querySelectorAll('[role="alertdialog"]'),
@@ -655,11 +708,12 @@ class FacebookAdapter(PlatformAdapter):
                     ...document.querySelectorAll('[class*="overlay"]'),
                     ...document.querySelectorAll('[class*="modal"]'),
                 ];
-                if (containers.length > 0) {
-                    return containers.map(c => c.innerText || '').join(' ');
+                for (const c of containers) {
+                    parts.push(c.innerText || '');
                 }
-                // Fall back to body text (first 3000 chars)
-                return (document.body.innerText || '').substring(0, 3000);
+                // Always also check body text
+                parts.push((document.body.innerText || '').substring(0, 3000));
+                return parts.join(' ');
             }""")
 
             if not text:
