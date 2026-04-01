@@ -91,6 +91,8 @@ export const personaApi = {
 export const settingsApi = {
   get: () => api.get('/api/settings'),
   update: (data: Record<string, unknown>) => api.patch('/api/settings', data),
+  translate: (text: string, target_lang: string = 'en') =>
+    api.post('/api/settings/translate', { text, target_lang }),
 };
 
 export default api;

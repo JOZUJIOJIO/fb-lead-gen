@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, X, Plus, Save, Eye, Star, Trash2 } from 'lucide-react';
 import { personaApi } from '@/lib/api';
 import { personaStore } from '@/lib/localStore';
+import TranslateButton from '@/components/TranslateButton';
 
 interface PersonaData {
   id: number;
@@ -247,13 +248,16 @@ ${conversationRules || '[对话规则]'}`;
         {/* Persona Name + Default */}
         <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-[#1d1d1f]">人设名称</h2>
-          <input
-            type="text"
-            value={personaName}
-            onChange={(e) => { setPersonaName(e.target.value); markDirty(); }}
-            placeholder="例如：专业商务顾问"
-            className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={personaName}
+              onChange={(e) => { setPersonaName(e.target.value); markDirty(); }}
+              placeholder="例如：专业商务顾问"
+              className="flex-1 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+            />
+            <TranslateButton text={personaName} onTranslated={(v) => { setPersonaName(v); markDirty(); }} />
+          </div>
           <label className="mt-3 inline-flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -272,23 +276,31 @@ ${conversationRules || '[对话规则]'}`;
           <div className="space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">公司名称</label>
-              <input
-                type="text"
-                value={companyName}
-                onChange={(e) => { setCompanyName(e.target.value); markDirty(); }}
-                placeholder="例如：TechBridge"
-                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => { setCompanyName(e.target.value); markDirty(); }}
+                  placeholder="例如：TechBridge"
+                  className="flex-1 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <TranslateButton text={companyName} onTranslated={(v) => { setCompanyName(v); markDirty(); }} />
+              </div>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">公司描述</label>
-              <textarea
-                value={companyDesc}
-                onChange={(e) => { setCompanyDesc(e.target.value); markDirty(); }}
-                placeholder="简要描述公司业务和优势..."
-                rows={3}
-                className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-              />
+              <div>
+                <textarea
+                  value={companyDesc}
+                  onChange={(e) => { setCompanyDesc(e.target.value); markDirty(); }}
+                  placeholder="简要描述公司业务和优势..."
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <div className="mt-1 flex justify-end">
+                  <TranslateButton text={companyDesc} onTranslated={(v) => { setCompanyDesc(v); markDirty(); }} />
+                </div>
+              </div>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">产品/服务</label>
@@ -330,23 +342,29 @@ ${conversationRules || '[对话规则]'}`;
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">姓名</label>
-              <input
-                type="text"
-                value={salesName}
-                onChange={(e) => { setSalesName(e.target.value); markDirty(); }}
-                placeholder="例如：张伟"
-                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={salesName}
+                  onChange={(e) => { setSalesName(e.target.value); markDirty(); }}
+                  placeholder="例如：张伟"
+                  className="flex-1 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <TranslateButton text={salesName} onTranslated={(v) => { setSalesName(v); markDirty(); }} />
+              </div>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">职位</label>
-              <input
-                type="text"
-                value={salesTitle}
-                onChange={(e) => { setSalesTitle(e.target.value); markDirty(); }}
-                placeholder="例如：商务经理"
-                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={salesTitle}
+                  onChange={(e) => { setSalesTitle(e.target.value); markDirty(); }}
+                  placeholder="例如：商务经理"
+                  className="flex-1 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <TranslateButton text={salesTitle} onTranslated={(v) => { setSalesTitle(v); markDirty(); }} />
+              </div>
             </div>
           </div>
         </div>
@@ -370,23 +388,33 @@ ${conversationRules || '[对话规则]'}`;
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">打招呼规则</label>
-              <textarea
-                value={greetingRules}
-                onChange={(e) => { setGreetingRules(e.target.value); markDirty(); }}
-                placeholder="定义 AI 如何开始对话..."
-                rows={3}
-                className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-              />
+              <div>
+                <textarea
+                  value={greetingRules}
+                  onChange={(e) => { setGreetingRules(e.target.value); markDirty(); }}
+                  placeholder="定义 AI 如何开始对话..."
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <div className="mt-1 flex justify-end">
+                  <TranslateButton text={greetingRules} onTranslated={(v) => { setGreetingRules(v); markDirty(); }} />
+                </div>
+              </div>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">对话规则</label>
-              <textarea
-                value={conversationRules}
-                onChange={(e) => { setConversationRules(e.target.value); markDirty(); }}
-                placeholder="定义后续对话的规则..."
-                rows={3}
-                className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-              />
+              <div>
+                <textarea
+                  value={conversationRules}
+                  onChange={(e) => { setConversationRules(e.target.value); markDirty(); }}
+                  placeholder="定义后续对话的规则..."
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <div className="mt-1 flex justify-end">
+                  <TranslateButton text={conversationRules} onTranslated={(v) => { setConversationRules(v); markDirty(); }} />
+                </div>
+              </div>
             </div>
           </div>
         </div>

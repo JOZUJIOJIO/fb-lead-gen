@@ -224,6 +224,39 @@ async def test_ai_connection(user: User = Depends(get_current_user)):
         return {"success": False, "message": f"连接失败: {e}"}
 
 
+# ---------- Translate ----------
+
+class TranslateRequest(BaseModel):
+    text: str
+    target_lang: str = "en"
+
+
+@router.post("/translate")
+async def translate_text(
+    body: TranslateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Translate text to target language using the configured AI provider."""
+    from app.services.ai_service import _get_provider_config, _default_model, _call_openai_compatible, _call_anthropic
+
+    provider, base_url, api_key = _get_provider_config()
+    if not api_key:
+        return {"success": False, "translated": body.text, "message": "未配置 API Key"}
+
+    model = _default_model(provider)
+    system_prompt = "You are a translator. Translate the user's text to the target language. Output ONLY the translated text, nothing else. No quotes, no explanation."
+    user_prompt = f"Translate to {body.target_lang}:\n{body.text}"
+
+    try:
+        if provider == "anthropic":
+            result = await _call_anthropic(api_key, model, system_prompt, user_prompt)
+        else:
+            result = await _call_openai_compatible(base_url, api_key, model, system_prompt, user_prompt)
+        return {"success": True, "translated": result.strip()}
+    except Exception as e:
+        return {"success": False, "translated": body.text, "message": str(e)}
+
+
 # ---------- Auto-reply control ----------
 
 @router.post("/auto-reply/start")

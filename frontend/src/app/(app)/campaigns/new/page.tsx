@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Facebook, Twitter, Instagram, Search, UserCircle, Send, Sparkles, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { campaignApi, personaApi } from '@/lib/api';
+import TranslateButton from '@/components/TranslateButton';
 
 const platforms = [
   { id: 'facebook', name: 'Facebook', icon: Facebook, enabled: true },
@@ -121,13 +122,16 @@ export default function NewCampaignPage() {
         {/* Task Name */}
         <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-[#1d1d1f]">任务名称</h2>
-          <input
-            type="text"
-            value={campaignName}
-            onChange={(e) => setCampaignName(e.target.value)}
-            placeholder="例如：Facebook 外贸客户开发"
-            className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={campaignName}
+              onChange={(e) => setCampaignName(e.target.value)}
+              placeholder="例如：Facebook 外贸客户开发"
+              className="flex-1 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+            />
+            <TranslateButton text={campaignName} onTranslated={setCampaignName} />
+          </div>
         </div>
 
         {/* Step 1: Platform */}
@@ -178,13 +182,16 @@ export default function NewCampaignPage() {
                 <Search className="mr-1.5 inline h-4 w-4 text-[#86868b]" />
                 关键词
               </label>
-              <input
-                type="text"
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                placeholder="例如：外贸, B2B, 供应商"
-                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                  placeholder="例如：外贸, B2B, 供应商"
+                  className="flex-1 rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+                />
+                <TranslateButton text={keywords} onTranslated={setKeywords} />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
