@@ -433,7 +433,68 @@ class FacebookAdapter(PlatformAdapter):
                 if message_btn:
                     break
 
+            # JS fallback: find the button by Messenger SVG icon or nearby structure
             if not message_btn:
+                message_btn = await page.evaluate_handle("""() => {
+                    // Strategy 1: Find by Messenger SVG path (the chat-bubble icon)
+                    const svgs = document.querySelectorAll('svg');
+                    for (const svg of svgs) {
+                        const path = svg.querySelector('path');
+                        if (path) {
+                            const d = path.getAttribute('d') || '';
+                            // Facebook Messenger icon has distinctive path starting points
+                            if (d.includes('M12') && (d.includes('C5.37') || d.includes('c-4.97'))) {
+                                const btn = svg.closest('[role="button"], a, button');
+                                if (btn) return btn;
+                            }
+                        }
+                    }
+                    // Strategy 2: Find action buttons row, pick the one next to "Add friend"
+                    const buttons = document.querySelectorAll('[role="button"]');
+                    for (const btn of buttons) {
+                        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                        if (label.includes('message') || label.includes('消息') || label.includes('发消息')) {
+                            return btn;
+                        }
+                    }
+                    // Strategy 3: Profile action bar — second or third button after the blue primary
+                    const actionBtns = document.querySelectorAll('div[data-pagelet="ProfileActions"] [role="button"], div.x1qjc9v5 [role="button"]');
+                    if (actionBtns.length >= 2) {
+                        // Skip the first (usually Add Friend), take the second (usually Message)
+                        return actionBtns[1];
+                    }
+                    return null;
+                }""")
+                if message_btn:
+                    # evaluate_handle returns JSHandle; check if it's usable
+                    try:
+                        tag = await message_btn.evaluate("el => el.tagName")
+                        if not tag:
+                            message_btn = None
+                    except Exception:
+                        message_btn = None
+
+            if not message_btn:
+                # Last resort: go directly to Messenger
+                messenger_url = await self._get_messenger_url(page, profile_url)
+                if messenger_url:
+                    logger.info("send_message: no Message button, trying Messenger direct: %s", messenger_url)
+                    await page.goto(messenger_url, wait_until="domcontentloaded", timeout=30000)
+                    await _random_delay(3, 5)
+                    msg_input = await self._find_message_input(page)
+                    if msg_input:
+                        # Skip button click, go straight to typing
+                        await msg_input.click()
+                        await _random_delay(0.5, 1.0)
+                        for char in message:
+                            await page.keyboard.type(char)
+                            await asyncio.sleep(random.uniform(0.05, 0.15))
+                        await _random_delay(1, 2)
+                        await page.keyboard.press("Enter")
+                        await _random_delay(2, 3)
+                        logger.info("send_message: sent via Messenger direct to %s", profile_url)
+                        return {"success": True, "failure_code": None}
+
                 logger.error("send_message: Message button not found on %s", profile_url)
                 await _save_screenshot(page, "no_message_btn")
                 return {"success": False, "failure_code": "message_button_not_found"}
