@@ -589,6 +589,17 @@ class FacebookAdapter(PlatformAdapter):
                 logger.debug("send_message: networkidle timeout, continuing anyway")
             await _random_delay(3, 5)
 
+            # ---- Step 1b: Check if Messenger redirected to /messages/new ----
+            # This means the user can't be messaged directly (no Messenger, or blocked)
+            current_url = (page.url or "").lower()
+            if "/messages/new" in current_url:
+                logger.warning(
+                    "send_message: redirected to /messages/new for %s — user may not accept messages",
+                    profile_url,
+                )
+                await _save_screenshot(page, "messenger_redirect")
+                return {"success": False, "failure_code": "platform_messaging_blocked"}
+
             # ---- Step 2-4: Dismiss dialogs + find input (up to 3 attempts) ----
             msg_input = None
             for attempt in range(3):
