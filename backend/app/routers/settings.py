@@ -31,6 +31,9 @@ class SettingsResponse(BaseModel):
     send_interval_min: int
     send_interval_max: int
     max_daily_messages: int
+    auto_reply_enabled: bool
+    auto_reply_interval: int
+    auto_reply_max_rounds: int
 
 
 class SettingsUpdate(BaseModel):
@@ -44,6 +47,9 @@ class SettingsUpdate(BaseModel):
     send_interval_min: Optional[int] = None
     send_interval_max: Optional[int] = None
     max_daily_messages: Optional[int] = None
+    auto_reply_enabled: Optional[bool] = None
+    auto_reply_interval: Optional[int] = None
+    auto_reply_max_rounds: Optional[int] = None
 
 
 def _env_file_path() -> Path:
@@ -63,6 +69,9 @@ async def get_settings(user: User = Depends(get_current_user)):
         send_interval_min=settings.SEND_INTERVAL_MIN,
         send_interval_max=settings.SEND_INTERVAL_MAX,
         max_daily_messages=settings.MAX_DAILY_MESSAGES,
+        auto_reply_enabled=settings.AUTO_REPLY_ENABLED,
+        auto_reply_interval=settings.AUTO_REPLY_INTERVAL,
+        auto_reply_max_rounds=settings.AUTO_REPLY_MAX_ROUNDS,
     )
 
 
@@ -104,6 +113,15 @@ async def update_settings(
     if body.max_daily_messages is not None:
         settings.MAX_DAILY_MESSAGES = body.max_daily_messages
         updates["MAX_DAILY_MESSAGES"] = str(body.max_daily_messages)
+    if body.auto_reply_enabled is not None:
+        settings.AUTO_REPLY_ENABLED = body.auto_reply_enabled
+        updates["AUTO_REPLY_ENABLED"] = str(body.auto_reply_enabled)
+    if body.auto_reply_interval is not None:
+        settings.AUTO_REPLY_INTERVAL = body.auto_reply_interval
+        updates["AUTO_REPLY_INTERVAL"] = str(body.auto_reply_interval)
+    if body.auto_reply_max_rounds is not None:
+        settings.AUTO_REPLY_MAX_ROUNDS = body.auto_reply_max_rounds
+        updates["AUTO_REPLY_MAX_ROUNDS"] = str(body.auto_reply_max_rounds)
 
     # Persist to .env
     if updates:
@@ -195,6 +213,32 @@ async def test_ai_connection(user: User = Depends(get_current_user)):
         return {"success": True, "message": f"连接成功 ({provider}/{model})", "response": result[:50]}
     except Exception as e:
         return {"success": False, "message": f"连接失败: {e}"}
+
+
+# ---------- Auto-reply control ----------
+
+@router.post("/auto-reply/start")
+async def start_auto_reply(user: User = Depends(get_current_user)):
+    from app.services import reply_service
+    reply_service.start()
+    settings.AUTO_REPLY_ENABLED = True
+    _persist_env({"AUTO_REPLY_ENABLED": "True"})
+    return {"message": "自动回复服务已启动", **reply_service.get_status()}
+
+
+@router.post("/auto-reply/stop")
+async def stop_auto_reply(user: User = Depends(get_current_user)):
+    from app.services import reply_service
+    reply_service.stop()
+    settings.AUTO_REPLY_ENABLED = False
+    _persist_env({"AUTO_REPLY_ENABLED": "False"})
+    return {"message": "自动回复服务已停止", **reply_service.get_status()}
+
+
+@router.get("/auto-reply/status")
+async def auto_reply_status(user: User = Depends(get_current_user)):
+    from app.services import reply_service
+    return reply_service.get_status()
 
 
 def _persist_env(updates: dict[str, str]):

@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     SEND_INTERVAL_MAX: int = 180
     MAX_DAILY_MESSAGES: int = 50
 
+    # Auto-reply
+    AUTO_REPLY_ENABLED: bool = True
+    AUTO_REPLY_INTERVAL: int = 3600  # seconds between checks
+    AUTO_REPLY_MAX_ROUNDS: int = 10
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

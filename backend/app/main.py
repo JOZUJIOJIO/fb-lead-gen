@@ -94,8 +94,17 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     await seed_default_admin()
     await seed_default_personas()
+
+    # Start auto-reply service if enabled
+    if settings.AUTO_REPLY_ENABLED:
+        from app.services import reply_service
+        reply_service.start()
+
     yield
-    # Shutdown: dispose engine
+
+    # Shutdown: stop reply service and dispose engine
+    from app.services import reply_service
+    reply_service.stop()
     await engine.dispose()
 
 

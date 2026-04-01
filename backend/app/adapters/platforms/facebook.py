@@ -759,6 +759,170 @@ class FacebookAdapter(PlatformAdapter):
 
         return None
 
+    # -- Inbox scanning (for auto-reply) -------------------------------------
+
+    async def get_unread_threads(self) -> list[dict]:
+        """Scan Messenger inbox for threads with unread messages.
+
+        Returns a list of dicts: {"uid": str, "name": str, "thread_url": str}
+        """
+        if not self._page:
+            raise RuntimeError("Adapter not initialized.")
+
+        page = self._page
+        results: list[dict] = []
+
+        try:
+            await page.goto(
+                "https://www.facebook.com/messages/",
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+            await _random_delay(3, 5)
+            await self._dismiss_blocking_dialogs(page)
+            await _random_delay(1, 2)
+
+            # Find unread conversation items — they have a bold/unread indicator
+            threads = await page.evaluate("""() => {
+                const results = [];
+                // Messenger thread rows are links inside the chat list
+                const rows = document.querySelectorAll('a[href*="/messages/t/"]');
+                for (const row of rows) {
+                    const href = row.getAttribute('href') || '';
+                    // Unread threads typically have a bold font-weight or an unread dot
+                    const parent = row.closest('[role="row"]') || row.parentElement;
+                    if (!parent) continue;
+
+                    const style = window.getComputedStyle(parent);
+                    const text = parent.innerText || '';
+
+                    // Detect unread: bold text, unread dot, or aria attribute
+                    const hasBold = parent.querySelector('span[style*="font-weight"]')
+                        || parent.querySelector('strong')
+                        || style.fontWeight >= 600;
+                    const hasUnreadDot = parent.querySelector('[data-visualcompletion="ignore"]')
+                        || parent.querySelector('[aria-label*="unread" i]')
+                        || parent.querySelector('[aria-label*="未读"]');
+
+                    if (!hasBold && !hasUnreadDot) continue;
+
+                    // Extract UID from href
+                    const match = href.match(/\\/messages\\/t\\/([^/?]+)/);
+                    if (!match) continue;
+                    const uid = match[1];
+
+                    // Extract name — usually the first line of text
+                    const nameEl = parent.querySelector('span[dir="auto"]')
+                        || parent.querySelector('span');
+                    const name = nameEl ? nameEl.innerText.trim() : '';
+
+                    if (uid && !results.some(r => r.uid === uid)) {
+                        results.push({
+                            uid: uid,
+                            name: name.split('\\n')[0].trim(),
+                            thread_url: 'https://www.facebook.com/messages/t/' + uid,
+                        });
+                    }
+                }
+                return results;
+            }""")
+
+            results = threads or []
+            logger.info("get_unread_threads: found %d unread thread(s)", len(results))
+
+        except Exception as e:
+            logger.error("get_unread_threads failed: %s", e)
+            await _save_screenshot(page, "unread_threads_error")
+
+        return results
+
+    async def read_thread_messages(self, thread_url: str, max_messages: int = 20) -> list[dict]:
+        """Read recent messages from a Messenger thread.
+
+        Returns list of {"role": "user"|"assistant", "content": str} where
+        "assistant" = our sent messages, "user" = their replies.
+        """
+        if not self._page:
+            raise RuntimeError("Adapter not initialized.")
+
+        page = self._page
+        messages: list[dict] = []
+
+        try:
+            await page.goto(thread_url, wait_until="domcontentloaded", timeout=30000)
+            await _random_delay(3, 5)
+            await self._dismiss_blocking_dialogs(page)
+            await _random_delay(1, 2)
+
+            raw_messages = await page.evaluate("""(maxMessages) => {
+                const results = [];
+
+                // Get all message rows in the conversation
+                const messageGroups = document.querySelectorAll('[role="row"]');
+
+                for (const group of messageGroups) {
+                    // Determine if this is our message or theirs
+                    // Our messages are typically right-aligned or have a specific background
+                    const isOurs = (() => {
+                        // Method 1: Check background color (our messages are usually blue/colored)
+                        const bgEls = group.querySelectorAll('div[style*="background"]');
+                        for (const el of bgEls) {
+                            const bg = el.style.backgroundColor || '';
+                            // Facebook primary blue
+                            if (bg.includes('rgb(0, 132, 255)') || bg.includes('#0084ff')
+                                || bg.includes('rgb(0,') && bg.includes('255)')) {
+                                return true;
+                            }
+                        }
+                        // Method 2: Check class-based alignment
+                        const wrapper = group.querySelector('[class*="__fb-light-mode"]')
+                            || group.querySelector('div');
+                        if (wrapper) {
+                            const style = window.getComputedStyle(wrapper);
+                            if (style.flexDirection === 'row-reverse'
+                                || style.justifyContent === 'flex-end'
+                                || style.marginLeft === 'auto') {
+                                return true;
+                            }
+                        }
+                        return false;
+                    })();
+
+                    // Extract message text
+                    const textEls = group.querySelectorAll('div[dir="auto"]');
+                    for (const el of textEls) {
+                        const text = el.innerText.trim();
+                        if (text && text.length > 0 && text.length < 5000) {
+                            // Skip timestamps, reactions, system messages
+                            if (text.match(/^\\d{1,2}:\\d{2}/) || text.match(/^(Yesterday|Today|星期)/))
+                                continue;
+                            if (text.length < 2) continue;
+
+                            results.push({
+                                role: isOurs ? 'assistant' : 'user',
+                                content: text,
+                            });
+                        }
+                    }
+
+                    if (results.length >= maxMessages) break;
+                }
+
+                return results;
+            }""", max_messages)
+
+            messages = raw_messages or []
+            logger.info(
+                "read_thread_messages: read %d message(s) from %s",
+                len(messages), thread_url,
+            )
+
+        except Exception as e:
+            logger.error("read_thread_messages failed for %s: %s", thread_url, e)
+            await _save_screenshot(page, "read_thread_error")
+
+        return messages
+
     # -- Cleanup -------------------------------------------------------------
 
     async def close(self) -> None:

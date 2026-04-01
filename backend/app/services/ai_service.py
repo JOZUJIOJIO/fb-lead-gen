@@ -240,15 +240,70 @@ async def generate_greeting(profile_data: dict, persona: dict) -> str:
         return await _call_openai_compatible(base_url, api_key, model, system_prompt, user_prompt)
 
 
-async def generate_reply(conversation_history: list, persona: dict) -> str:
-    """根据对话上下文生成回复。
+async def generate_reply(
+    conversation_history: list,
+    persona: dict,
+    lead_profile: dict | None = None,
+    current_round: int = 1,
+    max_rounds: int = 10,
+) -> str:
+    """根据对话上下文生成回复，渐进式引导对方添加私域联系方式。
 
     Args:
         conversation_history: 消息列表，每条为 {"role": "user"|"assistant", "content": "..."}.
-        persona: 人设配置。
+        persona: 人设配置（含 whatsapp_id / telegram_id）。
+        lead_profile: 目标用户资料（name, bio, industry 等）。
+        current_round: 当前回复轮次（1-based）。
+        max_rounds: 最大回复轮次。
     """
     system_prompt = _persona_to_system_prompt(persona)
-    system_prompt += "\n\n请根据以上人设和下面的对话历史，生成一条合适的回复。保持对话自然流畅，不要生硬推销。"
+
+    # Build private-domain contact info
+    contacts = []
+    if persona.get("whatsapp_id"):
+        contacts.append(f"WhatsApp: {persona['whatsapp_id']}")
+    if persona.get("telegram_id"):
+        contacts.append(f"Telegram: {persona['telegram_id']}")
+    contact_str = "、".join(contacts) if contacts else ""
+
+    # Progressive conversion strategy
+    system_prompt += "\n\n## 回复规则\n"
+    system_prompt += "请根据以上人设和对话历史生成一条回复。保持对话自然流畅，不要生硬推销。\n"
+    system_prompt += f"当前是第 {current_round}/{max_rounds} 轮对话。\n\n"
+
+    if contact_str:
+        system_prompt += f"""## 私域引导策略
+你的私域联系方式：{contact_str}
+
+核心原则：用最少的轮次自然引导对方添加你的 WhatsApp 或 Telegram。
+
+- 如果对方已经表现出兴趣（问价格、问合作、问详情），立刻给出联系方式，不要拖延
+- 如果对方还在闲聊或表达好奇，继续建立关系，找合适时机自然带出联系方式
+- 不要生硬地说"加我微信/WhatsApp"，要给出一个让对方想加你的理由（发资料、深入聊、分享案例等）
+- 第 {max_rounds} 轮是最后一次机会，友好地留下联系方式
+
+示例引导话术：
+- "这个我之前整理过一份案例集，WhatsApp 上发你更方便：{contacts[0] if contacts else ''}"
+- "细节在 Facebook 上聊不太方便，我们可以移步 Telegram 详聊"
+- "我把产品手册发你，方便加个 WhatsApp 吗？"
+"""
+
+    if lead_profile:
+        profile_parts = []
+        if lead_profile.get("name"):
+            profile_parts.append(f"姓名：{lead_profile['name']}")
+        if lead_profile.get("bio"):
+            profile_parts.append(f"简介：{lead_profile['bio'][:200]}")
+        if lead_profile.get("industry"):
+            profile_parts.append(f"行业：{lead_profile['industry']}")
+        if lead_profile.get("work"):
+            work = lead_profile["work"]
+            if isinstance(work, str):
+                profile_parts.append(f"工作：{work[:100]}")
+        if profile_parts:
+            system_prompt += "\n## 对方资料\n" + "\n".join(profile_parts) + "\n"
+
+    system_prompt += "\n请只输出回复内容，不要输出任何解释或前缀。控制在 200 字以内。"
 
     provider, base_url, api_key = _get_provider_config()
     model = _default_model(provider)

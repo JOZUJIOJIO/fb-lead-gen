@@ -31,8 +31,15 @@ export default function NewPersonaPage() {
   const [greetingRules, setGreetingRules] = useState('');
   const [conversationRules, setConversationRules] = useState('');
 
+  // Contact (private domain)
+  const [whatsappId, setWhatsappId] = useState('');
+  const [telegramId, setTelegramId] = useState('');
+
+  // System prompt
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [promptMode, setPromptMode] = useState<'auto' | 'custom'>('auto');
+
   const [personaName, setPersonaName] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -84,7 +91,9 @@ ${conversationRules || '[对话规则]'}`;
       tone,
       greeting_rules: greetingRules ? { text: greetingRules } : null,
       conversation_rules: conversationRules ? { text: conversationRules } : null,
-      system_prompt: generatePreview(),
+      system_prompt: promptMode === 'custom' ? systemPrompt : generatePreview(),
+      whatsapp_id: whatsappId || null,
+      telegram_id: telegramId || null,
       is_default: false,
     };
 
@@ -321,23 +330,78 @@ ${conversationRules || '[对话规则]'}`;
           </div>
         </div>
 
-        {/* Preview */}
-        <div className="rounded-2xl bg-white border border-[#e5e5e7]/60 shadow-sm overflow-hidden">
-          <button
-            onClick={() => setShowPreview(!showPreview)}
-            className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[#f5f5f7]/50"
-          >
-            <div className="flex items-center gap-2">
-              <Eye className="h-4 w-4 text-[#86868b]" />
-              <span className="text-base font-semibold text-[#1d1d1f]">系统提示词预览</span>
+        {/* Private Domain Contact */}
+        <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
+          <h2 className="mb-1 text-base font-semibold text-[#1d1d1f]">私域联系方式</h2>
+          <p className="mb-4 text-xs text-[#86868b]">AI 会在对话中引导对方通过以下方式联系你</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">WhatsApp</label>
+              <input
+                type="text"
+                value={whatsappId}
+                onChange={(e) => setWhatsappId(e.target.value)}
+                placeholder="例如：+8613800138000"
+                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+              />
             </div>
-            <span className="text-xs text-[#0071e3]">{showPreview ? '收起' : '展开'}</span>
-          </button>
-          {showPreview && (
-            <div className="border-t border-[#e5e5e7]/60 bg-[#fafafa] p-6">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-[#1d1d1f]">Telegram</label>
+              <input
+                type="text"
+                value={telegramId}
+                onChange={(e) => setTelegramId(e.target.value)}
+                placeholder="例如：@your_username"
+                className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* System Prompt */}
+        <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-[#1d1d1f]">系统提示词</h2>
+            <div className="flex items-center gap-1 rounded-lg bg-[#f5f5f7] p-0.5">
+              <button
+                onClick={() => setPromptMode('auto')}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${promptMode === 'auto' ? 'bg-white text-[#1d1d1f] shadow-sm' : 'text-[#86868b] hover:text-[#1d1d1f]'}`}
+              >
+                自动生成
+              </button>
+              <button
+                onClick={() => { setPromptMode('custom'); if (!systemPrompt) setSystemPrompt(generatePreview()); }}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${promptMode === 'custom' ? 'bg-white text-[#1d1d1f] shadow-sm' : 'text-[#86868b] hover:text-[#1d1d1f]'}`}
+              >
+                自定义编辑
+              </button>
+            </div>
+          </div>
+          {promptMode === 'auto' ? (
+            <div className="rounded-xl bg-[#fafafa] border border-[#e5e5e7]/60 p-4">
               <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-[#1d1d1f]">
                 {generatePreview()}
               </pre>
+              <p className="mt-3 text-xs text-[#86868b]">由上方字段自动拼接生成，切换到「自定义编辑」可直接修改</p>
+            </div>
+          ) : (
+            <div>
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                placeholder="输入完整的系统提示词，定义 AI 的身份、行为规则和对话策略..."
+                rows={12}
+                className="w-full resize-y rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] placeholder-[#86868b] outline-none transition-colors focus:border-[#0071e3] focus:bg-white font-mono leading-relaxed"
+              />
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-xs text-[#86868b]">完全自定义 AI 的行为，支持任意格式</p>
+                <button
+                  onClick={() => setSystemPrompt(generatePreview())}
+                  className="text-xs text-[#0071e3] hover:underline"
+                >
+                  从字段重新生成
+                </button>
+              </div>
             </div>
           )}
         </div>

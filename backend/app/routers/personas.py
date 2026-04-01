@@ -26,6 +26,8 @@ class PersonaCreate(BaseModel):
     greeting_rules: Optional[dict] = None
     conversation_rules: Optional[dict] = None
     system_prompt: Optional[str] = None
+    whatsapp_id: Optional[str] = None
+    telegram_id: Optional[str] = None
     is_default: bool = False
 
 
@@ -41,6 +43,8 @@ class PersonaResponse(BaseModel):
     greeting_rules: Optional[dict]
     conversation_rules: Optional[dict]
     system_prompt: Optional[str]
+    whatsapp_id: Optional[str]
+    telegram_id: Optional[str]
     is_default: bool
     created_at: datetime
     updated_at: datetime
@@ -72,6 +76,8 @@ async def create_persona(
         greeting_rules=body.greeting_rules,
         conversation_rules=body.conversation_rules,
         system_prompt=body.system_prompt,
+        whatsapp_id=body.whatsapp_id,
+        telegram_id=body.telegram_id,
         is_default=body.is_default,
     )
     db.add(persona)
@@ -132,6 +138,8 @@ async def update_persona(
     persona.greeting_rules = body.greeting_rules
     persona.conversation_rules = body.conversation_rules
     persona.system_prompt = body.system_prompt
+    persona.whatsapp_id = body.whatsapp_id
+    persona.telegram_id = body.telegram_id
     persona.is_default = body.is_default
 
     await db.commit()

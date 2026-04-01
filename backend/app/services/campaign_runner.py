@@ -14,6 +14,7 @@ from app.config import settings
 from app.database import async_session
 from app.models import Campaign, CampaignStatus, Lead, LeadStatus, Message, MessageDirection, PlatformEnum
 from app.services.ai_service import analyze_profile, generate_greeting
+from app.services.browser_lock import browser_lock
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,13 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
     - Review mode (generate but don't send)
     - Cookie validation before start
     """
-    logger.info("Campaign %d: starting", campaign_id)
+    logger.info("Campaign %d: waiting for browser lock", campaign_id)
+    async with browser_lock:
+        await _run_campaign_inner(campaign_id)
+
+
+async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
+    logger.info("Campaign %d: starting (browser lock acquired)", campaign_id)
 
     async with async_session() as session:
         # 1. Load campaign + persona

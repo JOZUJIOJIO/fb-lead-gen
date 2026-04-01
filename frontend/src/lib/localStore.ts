@@ -22,6 +22,8 @@ export interface LocalPersona {
   greeting_rules: { text?: string } | null;
   conversation_rules: { text?: string } | null;
   system_prompt: string | null;
+  whatsapp_id: string | null;
+  telegram_id: string | null;
   is_default: boolean;
   created_at: string;
   updated_at: string;

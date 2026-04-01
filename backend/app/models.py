@@ -80,6 +80,8 @@ class Persona(Base):
     greeting_rules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     conversation_rules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    whatsapp_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    telegram_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
