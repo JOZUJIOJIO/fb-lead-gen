@@ -45,6 +45,7 @@ class LeadStatus(str, enum.Enum):
     converted = "converted"
     rejected = "rejected"
     failed = "failed"
+    blacklisted = "blacklisted"  # 永久跳过：非活跃/无法私信/被平台限制
 
 
 class MessageDirection(str, enum.Enum):

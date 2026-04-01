@@ -33,6 +33,9 @@ _FAILURE_REASONS: dict[str, str] = {
     "platform_unusual_activity": "Facebook 检测到异常活动",
     "platform_security_check": "Facebook 安全检查拦截",
     "platform_checkpoint_redirect": "Facebook 跳转到安全检查页面",
+    "user_inactive": "非活跃用户：主页无近期发帖",
+    "no_message_button": "用户主页无「发消息」按钮",
+    "check_error": "消息能力检查失败",
 }
 
 
@@ -103,7 +106,21 @@ async def _is_already_contacted(session: AsyncSession, platform_user_id: str, pl
         select(Lead.id).where(
             Lead.platform_user_id == platform_user_id,
             Lead.platform == PlatformEnum(platform),
-            Lead.status != LeadStatus.failed,
+            Lead.status.not_in([LeadStatus.failed, LeadStatus.blacklisted]),
+        ).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _is_blacklisted(session: AsyncSession, platform_user_id: str, platform: str) -> bool:
+    """Check if this person has been permanently blacklisted (inactive/no-messaging)."""
+    if not platform_user_id:
+        return False
+    result = await session.execute(
+        select(Lead.id).where(
+            Lead.platform_user_id == platform_user_id,
+            Lead.platform == PlatformEnum(platform),
+            Lead.status == LeadStatus.blacklisted,
         ).limit(1)
     )
     return result.scalar_one_or_none() is not None
@@ -350,6 +367,16 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                     await session.commit()
                     continue
 
+                # 4-pre-c. Blacklist: skip permanently blacklisted users
+                if await _is_blacklisted(session, platform_uid, "facebook"):
+                    logger.info(
+                        "Campaign %d: SKIP %s (blacklisted — inactive or messaging blocked)",
+                        campaign_id, target_name,
+                    )
+                    campaign.progress_current = idx + 1
+                    await session.commit()
+                    continue
+
                 # 4a. Save as Lead (status=found)
                 lead = Lead(
                     campaign_id=campaign_id,
@@ -401,6 +428,44 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                     lead.industry = merged_profile.get("industry", "")[:100] if merged_profile.get("industry") else None
                     lead.raw_profile_data = merged_profile
                     await session.commit()
+
+                    # 4c-2. Activity & messaging pre-check
+                    recent_posts = merged_profile.get("recent_posts", [])
+                    is_active = len(recent_posts) > 0
+                    if not is_active:
+                        logger.info(
+                            "Campaign %d: [%s] BLACKLIST — 非活跃用户(无近期发帖)，永久跳过",
+                            campaign_id, target_name,
+                        )
+                        lead.status = LeadStatus.blacklisted
+                        profile_meta = lead.raw_profile_data or {}
+                        if isinstance(profile_meta, dict):
+                            profile_meta["failure_code"] = "user_inactive"
+                            profile_meta["failure_reason"] = "非活跃用户：主页无近期发帖"
+                        lead.raw_profile_data = profile_meta
+                        await session.commit()
+                        continue
+
+                    # Check if Message button exists on the profile page
+                    # (adapter is still on profile page from get_profile)
+                    can_message = await adapter.check_can_message(profile_url)
+                    if not can_message["ok"]:
+                        reason_code = can_message.get("code", "no_message_button")
+                        reason_text = can_message.get("reason", "无法发送私信")
+                        logger.info(
+                            "Campaign %d: [%s] BLACKLIST — %s，永久跳过",
+                            campaign_id, target_name, reason_text,
+                        )
+                        lead.status = LeadStatus.blacklisted
+                        profile_meta = lead.raw_profile_data or {}
+                        if isinstance(profile_meta, dict):
+                            profile_meta["failure_code"] = reason_code
+                            profile_meta["failure_reason"] = reason_text
+                        lead.raw_profile_data = profile_meta
+                        await session.commit()
+                        continue
+
+                    logger.info("Campaign %d: [%s] 预检通过 — 活跃用户，可私信", campaign_id, target_name)
 
                     # 4d. Generate personalized greeting
                     logger.info("Campaign %d: [%s] Step 3/4 — AI 生成个性化问候语...", campaign_id, target_name)
@@ -473,14 +538,30 @@ async def run_campaign(campaign_id: int) -> None:  # noqa: C901
                                 )
                             lead.raw_profile_data = profile_meta
 
+                            # Distinguish user-level blocks from account-level blocks
+                            is_user_level_block = failure_code in (
+                                "platform_messaging_blocked",
+                                "message_button_not_found",
+                                "message_input_not_found",
+                            )
+
+                            if is_user_level_block:
+                                # This user can't be messaged — blacklist, continue to next
+                                logger.info(
+                                    "Campaign %d: [%s] BLACKLIST — %s，永久跳过",
+                                    campaign_id, target_name, failure_code,
+                                )
+                                lead.status = LeadStatus.blacklisted
+                                await session.commit()
+                                continue
+
                             if is_platform_restriction:
-                                # Platform-level block — don't bother checking login,
-                                # and pause campaign to avoid burning more requests.
+                                # Account-level block — pause campaign
                                 logger.error(
                                     "Campaign %d: PLATFORM RESTRICTION for %s (code=%s) — pausing campaign",
                                     campaign_id, target_name, failure_code,
                                 )
-                                lead.status = LeadStatus.failed
+                                lead.status = LeadStatus.blacklisted
                                 campaign.status = CampaignStatus.paused
                                 await session.commit()
                                 break

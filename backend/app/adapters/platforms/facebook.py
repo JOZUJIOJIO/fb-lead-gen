@@ -374,6 +374,68 @@ class FacebookAdapter(PlatformAdapter):
 
         return profile_data
 
+    # -- Pre-check: can we message this user? --------------------------------
+
+    async def check_can_message(self, profile_url: str) -> dict:
+        """Check if the profile has a Message button, without clicking it.
+
+        Returns {"ok": True} or {"ok": False, "code": str, "reason": str}.
+        Assumes the page is already on the profile (from get_profile).
+        """
+        if not self._page:
+            return {"ok": False, "code": "adapter_not_ready", "reason": "浏览器未初始化"}
+
+        page = self._page
+
+        # Make sure we're on the profile page (get_profile may have left us on timeline)
+        current_url = page.url or ""
+        if profile_url.rstrip("/") not in current_url:
+            await page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
+            await _random_delay(2, 3)
+
+        try:
+            # Check for Message button via selectors
+            for sel in self._MSG_BTN_SELECTORS:
+                btn = await page.query_selector(sel)
+                if btn:
+                    return {"ok": True}
+
+            # JS fallback: check by aria-label or SVG
+            has_btn = await page.evaluate("""() => {
+                // Check aria-labels
+                const buttons = document.querySelectorAll('[role="button"]');
+                for (const btn of buttons) {
+                    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    if (label.includes('message') || label.includes('消息') || label.includes('发消息'))
+                        return true;
+                }
+                // Check for Messenger SVG
+                const svgs = document.querySelectorAll('svg');
+                for (const svg of svgs) {
+                    const path = svg.querySelector('path');
+                    if (path) {
+                        const d = path.getAttribute('d') || '';
+                        if (d.includes('M12') && (d.includes('C5.37') || d.includes('c-4.97'))) {
+                            if (svg.closest('[role="button"], a, button')) return true;
+                        }
+                    }
+                }
+                return false;
+            }""")
+
+            if has_btn:
+                return {"ok": True}
+
+            return {
+                "ok": False,
+                "code": "no_message_button",
+                "reason": "用户主页无「发消息」按钮",
+            }
+
+        except Exception as e:
+            logger.debug("check_can_message error: %s", e)
+            return {"ok": False, "code": "check_error", "reason": f"检查失败: {e}"}
+
     # -- Messaging -----------------------------------------------------------
 
     # Wide selector lists for Facebook's many UI variants

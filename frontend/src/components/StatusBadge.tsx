@@ -18,6 +18,7 @@ const statusConfig: Record<string, { label: string; bg: string; text: string; do
   replied: { label: '已回复', bg: 'bg-emerald-50', text: 'text-emerald-700' },
   converted: { label: '已转化', bg: 'bg-purple-50', text: 'text-purple-700' },
   rejected: { label: '已拒绝', bg: 'bg-gray-100', text: 'text-gray-600' },
+  blacklisted: { label: '已屏蔽', bg: 'bg-slate-100', text: 'text-slate-500' },
   sent: { label: '已发送', bg: 'bg-blue-50', text: 'text-blue-700' },
   interested: { label: '有意向', bg: 'bg-purple-50', text: 'text-purple-700' },
   not_interested: { label: '无意向', bg: 'bg-gray-100', text: 'text-gray-600' },

@@ -36,6 +36,7 @@ const statusOptions = [
   { value: 'replied', label: '已回复' },
   { value: 'converted', label: '已转化' },
   { value: 'failed', label: '失败' },
+  { value: 'blacklisted', label: '已屏蔽' },
 ];
 
 const platformOptions = [
