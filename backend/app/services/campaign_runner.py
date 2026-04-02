@@ -118,14 +118,18 @@ async def _wait_for_send_window(campaign: "Campaign") -> None:
 
 
 async def _is_already_contacted(session: AsyncSession, platform_user_id: str, platform: str) -> bool:
-    """Check if this person has already been contacted in ANY campaign."""
+    """Check if this person has been successfully messaged in ANY campaign.
+
+    Only skips people we actually sent a message to (messaged/replied/converted).
+    Failed leads are allowed to be retried by other campaigns.
+    """
     if not platform_user_id:
         return False
     result = await session.execute(
         select(Lead.id).where(
             Lead.platform_user_id == platform_user_id,
             Lead.platform == PlatformEnum(platform),
-            Lead.status.notin_([LeadStatus.failed, LeadStatus.blacklisted]),
+            Lead.status.in_([LeadStatus.messaged, LeadStatus.replied, LeadStatus.converted]),
         ).limit(1)
     )
     return result.scalar_one_or_none() is not None
@@ -337,13 +341,23 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                     campaign_id, len(already_processed),
                 )
 
-            # Collect globally known UIDs to skip during search
+            # Collect UIDs to skip during search:
+            # - Already processed in THIS campaign (resume)
+            # - Successfully messaged in ANY campaign (no need to contact again)
+            # - Blacklisted (Facebook confirmed can't message)
+            # NOTE: Failed leads are NOT excluded — they get another chance
             all_known_uids = set(already_processed)
             from sqlalchemy import select as sa_select
             global_uids_result = await session.execute(
                 sa_select(Lead.platform_user_id).where(
                     Lead.platform == PlatformEnum.facebook,
                     Lead.platform_user_id.is_not(None),
+                    Lead.status.in_([
+                        LeadStatus.messaged,
+                        LeadStatus.replied,
+                        LeadStatus.converted,
+                        LeadStatus.blacklisted,
+                    ]),
                 )
             )
             for uid in global_uids_result.scalars().all():
