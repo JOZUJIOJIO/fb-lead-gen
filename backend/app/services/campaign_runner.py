@@ -73,6 +73,7 @@ def _campaign_to_persona_dict(campaign: Campaign) -> dict:
         "greeting_rules": persona.greeting_rules,
         "conversation_rules": persona.conversation_rules,
         "system_prompt": persona.system_prompt,
+        "output_language": persona.output_language,
     }
 
 

@@ -20,6 +20,7 @@ interface PersonaData {
   greeting_rules: { text?: string } | null;
   conversation_rules: { text?: string } | null;
   system_prompt: string | null;
+  output_language: string;
   whatsapp_id: string | null;
   telegram_id: string | null;
   is_default: boolean;
@@ -44,7 +45,8 @@ export default function PersonaDetailPage({ params }: { params: { id: string } }
   const [greetingRules, setGreetingRules] = useState('');
   const [conversationRules, setConversationRules] = useState('');
 
-  // Contact (private domain)
+  // Language & Contact
+  const [outputLanguage, setOutputLanguage] = useState('auto');
   const [whatsappId, setWhatsappId] = useState('');
   const [telegramId, setTelegramId] = useState('');
 
@@ -73,6 +75,7 @@ export default function PersonaDetailPage({ params }: { params: { id: string } }
       const cr = local.conversation_rules as { text?: string } | null;
       setGreetingRules(gr?.text || '');
       setConversationRules(cr?.text || '');
+      setOutputLanguage(local.output_language || 'auto');
       setWhatsappId(local.whatsapp_id || '');
       setTelegramId(local.telegram_id || '');
       if (local.system_prompt) {
@@ -96,6 +99,7 @@ export default function PersonaDetailPage({ params }: { params: { id: string } }
         setTone(p.tone || 'professional');
         setGreetingRules(p.greeting_rules?.text || '');
         setConversationRules(p.conversation_rules?.text || '');
+        setOutputLanguage(p.output_language || 'auto');
         setWhatsappId(p.whatsapp_id || '');
         setTelegramId(p.telegram_id || '');
         if (p.system_prompt) {
@@ -171,6 +175,7 @@ ${conversationRules || '[对话规则]'}`;
       greeting_rules: greetingRules ? { text: greetingRules } : null,
       conversation_rules: conversationRules ? { text: conversationRules } : null,
       system_prompt: promptMode === 'custom' ? systemPrompt : generatePreview(),
+      output_language: outputLanguage,
       whatsapp_id: whatsappId || null,
       telegram_id: telegramId || null,
       is_default: isDefault,
@@ -417,6 +422,21 @@ ${conversationRules || '[对话规则]'}`;
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Output Language */}
+        <div className="rounded-2xl bg-white p-6 border border-[#e5e5e7]/60 shadow-sm">
+          <h2 className="mb-1 text-base font-semibold text-[#1d1d1f]">输出语言</h2>
+          <p className="mb-3 text-xs text-[#86868b]">AI 生成的问候语和回复将使用该语言</p>
+          <select
+            value={outputLanguage}
+            onChange={(e) => { setOutputLanguage(e.target.value); markDirty(); }}
+            className="w-full rounded-xl border border-[#e5e5e7] bg-[#f5f5f7] px-4 py-3 text-sm text-[#1d1d1f] outline-none transition-colors focus:border-[#0071e3] focus:bg-white"
+          >
+            <option value="auto">自动检测（根据人设内容判断）</option>
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+          </select>
         </div>
 
         {/* Private Domain Contact */}

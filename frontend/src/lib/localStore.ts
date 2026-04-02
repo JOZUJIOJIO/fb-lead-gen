@@ -22,6 +22,7 @@ export interface LocalPersona {
   greeting_rules: { text?: string } | null;
   conversation_rules: { text?: string } | null;
   system_prompt: string | null;
+  output_language: string;
   whatsapp_id: string | null;
   telegram_id: string | null;
   is_default: boolean;

@@ -28,44 +28,99 @@ def _build_anthropic_headers(api_key: str) -> dict:
     }
 
 
+def _detect_output_language(persona: dict) -> str:
+    """Determine output language: 'en', 'zh', or 'auto'.
+
+    'auto' means: if persona content is mostly English, output English;
+    otherwise output the language matching the persona's system_prompt.
+    """
+    lang = persona.get("output_language", "auto")
+    if lang and lang != "auto":
+        return lang
+
+    # Auto-detect from persona content
+    check_text = " ".join(filter(None, [
+        persona.get("system_prompt", ""),
+        persona.get("company_name", ""),
+        persona.get("company_description", ""),
+        persona.get("salesperson_name", ""),
+    ]))
+    if not check_text:
+        return "en"
+
+    # Count ASCII vs non-ASCII characters
+    ascii_count = sum(1 for c in check_text if ord(c) < 128)
+    ratio = ascii_count / len(check_text) if check_text else 0
+    return "en" if ratio > 0.7 else "zh"
+
+
 def _persona_to_system_prompt(persona: dict) -> str:
-    """Convert a persona dict into a coherent system prompt in Chinese."""
+    """Convert a persona dict into a coherent system prompt."""
     if persona.get("system_prompt"):
         return persona["system_prompt"]
 
-    parts: list[str] = []
-    parts.append("你是一位专业的社交媒体销售代表，请严格按照以下人设进行对话。")
+    lang = _detect_output_language(persona)
 
-    if persona.get("salesperson_name"):
-        parts.append(f"你的名字是{persona['salesperson_name']}。")
-    if persona.get("salesperson_title"):
-        parts.append(f"你的职位是{persona['salesperson_title']}。")
-    if persona.get("company_name"):
-        parts.append(f"你所在的公司是{persona['company_name']}。")
-    if persona.get("company_description"):
-        parts.append(f"公司简介：{persona['company_description']}")
-    if persona.get("products"):
-        products = persona["products"]
-        if isinstance(products, list):
-            parts.append(f"你负责的产品/服务：{'、'.join(str(p) for p in products)}")
-        elif isinstance(products, dict):
-            parts.append(f"你负责的产品/服务：{json.dumps(products, ensure_ascii=False)}")
-    if persona.get("tone"):
-        parts.append(f"说话风格：{persona['tone']}。")
-    if persona.get("greeting_rules"):
-        rules = persona["greeting_rules"]
-        if isinstance(rules, list):
-            parts.append("打招呼规则：" + "；".join(str(r) for r in rules))
-        elif isinstance(rules, dict):
-            parts.append(f"打招呼规则：{json.dumps(rules, ensure_ascii=False)}")
-    if persona.get("conversation_rules"):
-        rules = persona["conversation_rules"]
-        if isinstance(rules, list):
-            parts.append("对话规则：" + "；".join(str(r) for r in rules))
-        elif isinstance(rules, dict):
-            parts.append(f"对话规则：{json.dumps(rules, ensure_ascii=False)}")
-
-    return "\n".join(parts)
+    if lang == "en":
+        parts: list[str] = []
+        parts.append("You are a professional social media sales representative. Follow the persona below strictly.")
+        if persona.get("salesperson_name"):
+            parts.append(f"Your name is {persona['salesperson_name']}.")
+        if persona.get("salesperson_title"):
+            parts.append(f"Your title is {persona['salesperson_title']}.")
+        if persona.get("company_name"):
+            parts.append(f"Your company is {persona['company_name']}.")
+        if persona.get("company_description"):
+            parts.append(f"Company overview: {persona['company_description']}")
+        if persona.get("products"):
+            products = persona["products"]
+            if isinstance(products, list):
+                parts.append(f"Products/services: {', '.join(str(p) for p in products)}")
+            elif isinstance(products, dict):
+                parts.append(f"Products/services: {json.dumps(products, ensure_ascii=False)}")
+        if persona.get("tone"):
+            parts.append(f"Communication style: {persona['tone']}.")
+        if persona.get("greeting_rules"):
+            rules = persona["greeting_rules"]
+            text = rules.get("text", json.dumps(rules, ensure_ascii=False)) if isinstance(rules, dict) else str(rules)
+            parts.append(f"Greeting rules: {text}")
+        if persona.get("conversation_rules"):
+            rules = persona["conversation_rules"]
+            text = rules.get("text", json.dumps(rules, ensure_ascii=False)) if isinstance(rules, dict) else str(rules)
+            parts.append(f"Conversation rules: {text}")
+        return "\n".join(parts)
+    else:
+        parts = []
+        parts.append("你是一位专业的社交媒体销售代表，请严格按照以下人设进行对话。")
+        if persona.get("salesperson_name"):
+            parts.append(f"你的名字是{persona['salesperson_name']}。")
+        if persona.get("salesperson_title"):
+            parts.append(f"你的职位是{persona['salesperson_title']}。")
+        if persona.get("company_name"):
+            parts.append(f"你所在的公司是{persona['company_name']}。")
+        if persona.get("company_description"):
+            parts.append(f"公司简介：{persona['company_description']}")
+        if persona.get("products"):
+            products = persona["products"]
+            if isinstance(products, list):
+                parts.append(f"你负责的产品/服务：{'、'.join(str(p) for p in products)}")
+            elif isinstance(products, dict):
+                parts.append(f"你负责的产品/服务：{json.dumps(products, ensure_ascii=False)}")
+        if persona.get("tone"):
+            parts.append(f"说话风格：{persona['tone']}。")
+        if persona.get("greeting_rules"):
+            rules = persona["greeting_rules"]
+            if isinstance(rules, list):
+                parts.append("打招呼规则：" + "；".join(str(r) for r in rules))
+            elif isinstance(rules, dict):
+                parts.append(f"打招呼规则：{json.dumps(rules, ensure_ascii=False)}")
+        if persona.get("conversation_rules"):
+            rules = persona["conversation_rules"]
+            if isinstance(rules, list):
+                parts.append("对话规则：" + "；".join(str(r) for r in rules))
+            elif isinstance(rules, dict):
+                parts.append(f"对话规则：{json.dumps(rules, ensure_ascii=False)}")
+        return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -199,33 +254,57 @@ async def generate_greeting(profile_data: dict, persona: dict) -> str:
         persona: 人设配置，字段对应 Persona 模型。
     """
     system_prompt = _persona_to_system_prompt(persona)
+    lang = _detect_output_language(persona)
 
-    user_prompt_parts = [
-        "请根据以下目标用户信息，生成一条自然、个性化的首次打招呼私信。",
-        "要求：不超过150字，语气真诚自然，不要过于推销，找到与对方的共同话题或切入点。",
-        "",
-        f"目标用户姓名：{profile_data.get('name', '未知')}",
-    ]
-    if profile_data.get("bio"):
-        user_prompt_parts.append(f"个人简介：{profile_data['bio']}")
-    if profile_data.get("industry"):
-        user_prompt_parts.append(f"行业：{profile_data['industry']}")
-    if profile_data.get("interests"):
-        interests = profile_data["interests"]
-        if isinstance(interests, list):
-            user_prompt_parts.append(f"兴趣爱好：{'、'.join(interests)}")
-        else:
-            user_prompt_parts.append(f"兴趣爱好：{interests}")
-    if profile_data.get("recent_topics"):
-        topics = profile_data["recent_topics"]
-        if isinstance(topics, list):
-            user_prompt_parts.append(f"最近话题：{'、'.join(topics)}")
-        else:
-            user_prompt_parts.append(f"最近话题：{topics}")
-    if profile_data.get("work"):
-        user_prompt_parts.append(f"工作经历：{profile_data['work']}")
-    if profile_data.get("education"):
-        user_prompt_parts.append(f"教育背景：{profile_data['education']}")
+    if lang == "en":
+        user_prompt_parts = [
+            "Based on the target user's info below, write a natural, personalized first message.",
+            "Requirements: under 150 words, genuine tone, not salesy, find a common topic or hook.",
+            "Output ONLY the message text, no quotes or explanation.",
+            "",
+            f"Target name: {profile_data.get('name', 'Unknown')}",
+        ]
+        if profile_data.get("bio"):
+            user_prompt_parts.append(f"Bio: {profile_data['bio']}")
+        if profile_data.get("industry"):
+            user_prompt_parts.append(f"Industry: {profile_data['industry']}")
+        if profile_data.get("interests"):
+            interests = profile_data["interests"]
+            user_prompt_parts.append(f"Interests: {', '.join(interests) if isinstance(interests, list) else interests}")
+        if profile_data.get("recent_topics"):
+            topics = profile_data["recent_topics"]
+            user_prompt_parts.append(f"Recent topics: {', '.join(topics) if isinstance(topics, list) else topics}")
+        if profile_data.get("work"):
+            user_prompt_parts.append(f"Work: {profile_data['work']}")
+        if profile_data.get("education"):
+            user_prompt_parts.append(f"Education: {profile_data['education']}")
+    else:
+        user_prompt_parts = [
+            "请根据以下目标用户信息，生成一条自然、个性化的首次打招呼私信。",
+            "要求：不超过150字，语气真诚自然，不要过于推销，找到与对方的共同话题或切入点。",
+            "",
+            f"目标用户姓名：{profile_data.get('name', '未知')}",
+        ]
+        if profile_data.get("bio"):
+            user_prompt_parts.append(f"个人简介：{profile_data['bio']}")
+        if profile_data.get("industry"):
+            user_prompt_parts.append(f"行业：{profile_data['industry']}")
+        if profile_data.get("interests"):
+            interests = profile_data["interests"]
+            if isinstance(interests, list):
+                user_prompt_parts.append(f"兴趣爱好：{'、'.join(interests)}")
+            else:
+                user_prompt_parts.append(f"兴趣爱好：{interests}")
+        if profile_data.get("recent_topics"):
+            topics = profile_data["recent_topics"]
+            if isinstance(topics, list):
+                user_prompt_parts.append(f"最近话题：{'、'.join(topics)}")
+            else:
+                user_prompt_parts.append(f"最近话题：{topics}")
+        if profile_data.get("work"):
+            user_prompt_parts.append(f"工作经历：{profile_data['work']}")
+        if profile_data.get("education"):
+            user_prompt_parts.append(f"教育背景：{profile_data['education']}")
 
     user_prompt = "\n".join(user_prompt_parts)
 
@@ -257,6 +336,7 @@ async def generate_reply(
         max_rounds: 最大回复轮次。
     """
     system_prompt = _persona_to_system_prompt(persona)
+    lang = _detect_output_language(persona)
 
     # Build private-domain contact info
     contacts = []
@@ -264,15 +344,52 @@ async def generate_reply(
         contacts.append(f"WhatsApp: {persona['whatsapp_id']}")
     if persona.get("telegram_id"):
         contacts.append(f"Telegram: {persona['telegram_id']}")
-    contact_str = "、".join(contacts) if contacts else ""
+    contact_str = ", ".join(contacts) if contacts else ""
 
-    # Progressive conversion strategy
-    system_prompt += "\n\n## 回复规则\n"
-    system_prompt += "请根据以上人设和对话历史生成一条回复。保持对话自然流畅，不要生硬推销。\n"
-    system_prompt += f"当前是第 {current_round}/{max_rounds} 轮对话。\n\n"
+    if lang == "en":
+        system_prompt += f"\n\n## Reply Rules\n"
+        system_prompt += "Generate a reply based on the persona and conversation history. Keep it natural, no hard selling.\n"
+        system_prompt += f"Current round: {current_round}/{max_rounds}.\n\n"
 
-    if contact_str:
-        system_prompt += f"""## 私域引导策略
+        if contact_str:
+            system_prompt += f"""## Private Channel Strategy
+Your contact info: {contact_str}
+
+Core principle: Guide them to add your WhatsApp or Telegram in as few rounds as possible.
+
+- If they show interest (ask about pricing, collaboration, details), share your contact immediately
+- If still chatting casually, keep building rapport and find the right moment
+- Give them a REASON to add you (share a report, discuss details, send case studies)
+- Round {max_rounds} is the last chance — leave your contact info gracefully
+
+Example phrases:
+- "I actually put together a case study on this — easier to share on WhatsApp: {contacts[0] if contacts else ''}"
+- "This is getting interesting! Let's continue on Telegram where I can share some resources"
+"""
+
+        if lead_profile:
+            profile_parts = []
+            if lead_profile.get("name"):
+                profile_parts.append(f"Name: {lead_profile['name']}")
+            if lead_profile.get("bio"):
+                profile_parts.append(f"Bio: {lead_profile['bio'][:200]}")
+            if lead_profile.get("industry"):
+                profile_parts.append(f"Industry: {lead_profile['industry']}")
+            if lead_profile.get("work"):
+                work = lead_profile["work"]
+                if isinstance(work, str):
+                    profile_parts.append(f"Work: {work[:100]}")
+            if profile_parts:
+                system_prompt += "\n## Target Profile\n" + "\n".join(profile_parts) + "\n"
+
+        system_prompt += "\nOutput ONLY the reply text. No explanation, no prefix. Under 150 words."
+    else:
+        system_prompt += f"\n\n## 回复规则\n"
+        system_prompt += "请根据以上人设和对话历史生成一条回复。保持对话自然流畅，不要生硬推销。\n"
+        system_prompt += f"当前是第 {current_round}/{max_rounds} 轮对话。\n\n"
+
+        if contact_str:
+            system_prompt += f"""## 私域引导策略
 你的私域联系方式：{contact_str}
 
 核心原则：用最少的轮次自然引导对方添加你的 WhatsApp 或 Telegram。
@@ -281,29 +398,24 @@ async def generate_reply(
 - 如果对方还在闲聊或表达好奇，继续建立关系，找合适时机自然带出联系方式
 - 不要生硬地说"加我微信/WhatsApp"，要给出一个让对方想加你的理由（发资料、深入聊、分享案例等）
 - 第 {max_rounds} 轮是最后一次机会，友好地留下联系方式
-
-示例引导话术：
-- "这个我之前整理过一份案例集，WhatsApp 上发你更方便：{contacts[0] if contacts else ''}"
-- "细节在 Facebook 上聊不太方便，我们可以移步 Telegram 详聊"
-- "我把产品手册发你，方便加个 WhatsApp 吗？"
 """
 
-    if lead_profile:
-        profile_parts = []
-        if lead_profile.get("name"):
-            profile_parts.append(f"姓名：{lead_profile['name']}")
-        if lead_profile.get("bio"):
-            profile_parts.append(f"简介：{lead_profile['bio'][:200]}")
-        if lead_profile.get("industry"):
-            profile_parts.append(f"行业：{lead_profile['industry']}")
-        if lead_profile.get("work"):
-            work = lead_profile["work"]
-            if isinstance(work, str):
-                profile_parts.append(f"工作：{work[:100]}")
-        if profile_parts:
-            system_prompt += "\n## 对方资料\n" + "\n".join(profile_parts) + "\n"
+        if lead_profile:
+            profile_parts = []
+            if lead_profile.get("name"):
+                profile_parts.append(f"姓名：{lead_profile['name']}")
+            if lead_profile.get("bio"):
+                profile_parts.append(f"简介：{lead_profile['bio'][:200]}")
+            if lead_profile.get("industry"):
+                profile_parts.append(f"行业：{lead_profile['industry']}")
+            if lead_profile.get("work"):
+                work = lead_profile["work"]
+                if isinstance(work, str):
+                    profile_parts.append(f"工作：{work[:100]}")
+            if profile_parts:
+                system_prompt += "\n## 对方资料\n" + "\n".join(profile_parts) + "\n"
 
-    system_prompt += "\n请只输出回复内容，不要输出任何解释或前缀。控制在 200 字以内。"
+        system_prompt += "\n请只输出回复内容，不要输出任何解释或前缀。控制在 200 字以内。"
 
     provider, base_url, api_key = _get_provider_config()
     model = _default_model(provider)

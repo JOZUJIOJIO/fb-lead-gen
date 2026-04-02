@@ -334,6 +334,7 @@ def _build_persona_dict(campaign: Campaign | None) -> dict:
         "greeting_rules": p.greeting_rules,
         "conversation_rules": p.conversation_rules,
         "system_prompt": p.system_prompt,
+        "output_language": p.output_language,
         "whatsapp_id": p.whatsapp_id,
         "telegram_id": p.telegram_id,
     }
