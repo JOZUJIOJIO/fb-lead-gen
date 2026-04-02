@@ -40,6 +40,18 @@ def get_status() -> dict:
     }
 
 
+def _on_task_done(task: asyncio.Task) -> None:
+    """Log unhandled exceptions from the reply task."""
+    global _is_running
+    _is_running = False
+    try:
+        exc = task.exception()
+        if exc and not isinstance(exc, asyncio.CancelledError):
+            logger.error("Reply service task died with exception: %s", exc)
+    except asyncio.CancelledError:
+        pass
+
+
 def start():
     global _reply_task, _is_running
     if _reply_task and not _reply_task.done():
@@ -47,6 +59,7 @@ def start():
         return
     _is_running = True
     _reply_task = asyncio.create_task(_reply_loop())
+    _reply_task.add_done_callback(_on_task_done)
     logger.info("Reply service started (interval=%ds)", settings.AUTO_REPLY_INTERVAL)
 
 
@@ -63,17 +76,32 @@ async def _reply_loop():
     """Main polling loop — runs until stopped."""
     global _last_check_at, _is_running
 
+    consecutive_errors = 0
+
     while _is_running:
         try:
             logger.info("Reply service: starting check cycle")
             await _check_and_reply()
             _last_check_at = datetime.utcnow()
+            consecutive_errors = 0  # Reset on success
             logger.info("Reply service: check cycle complete, next in %ds", settings.AUTO_REPLY_INTERVAL)
         except asyncio.CancelledError:
             logger.info("Reply service: cancelled")
             break
         except Exception as e:
-            logger.error("Reply service: error in check cycle: %s", e)
+            consecutive_errors += 1
+            logger.error("Reply service: error in check cycle (%d consecutive): %s", consecutive_errors, e)
+            # Exponential backoff: 1min, 2min, 4min, 8min, max 30min
+            if consecutive_errors >= 5:
+                logger.error("Reply service: too many consecutive errors, stopping")
+                break
+            backoff = min(60 * (2 ** (consecutive_errors - 1)), 1800)
+            logger.info("Reply service: backing off %ds before retry", backoff)
+            try:
+                await asyncio.sleep(backoff)
+            except asyncio.CancelledError:
+                break
+            continue
 
         # Wait for the configured interval
         try:

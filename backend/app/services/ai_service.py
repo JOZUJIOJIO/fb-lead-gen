@@ -314,18 +314,26 @@ async def generate_reply(
         # Anthropic requires alternating user/assistant messages
         messages = []
         for msg in conversation_history:
+            content = msg.get("content", "")
+            if not content:
+                continue
             role = msg.get("role", "user")
             if role not in ("user", "assistant"):
                 role = "user"
-            messages.append({"role": role, "content": msg["content"]})
+            messages.append({"role": role, "content": content})
+        if not messages:
+            messages = [{"role": "user", "content": "你好"}]
         return await _call_anthropic_multi(api_key, model, system_prompt, messages)
     else:
         messages = [{"role": "system", "content": system_prompt}]
         for msg in conversation_history:
+            content = msg.get("content", "")
+            if not content:
+                continue
             role = msg.get("role", "user")
             if role not in ("user", "assistant", "system"):
                 role = "user"
-            messages.append({"role": role, "content": msg["content"]})
+            messages.append({"role": role, "content": content})
         return await _call_openai_compatible_multi(base_url, api_key, model, messages)
 
 

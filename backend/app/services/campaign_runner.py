@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.adapters.platforms.facebook import FacebookAdapter
 from app.config import settings
@@ -100,14 +101,13 @@ async def _wait_for_send_window(campaign: "Campaign") -> None:
         if in_window:
             return
 
-        if start <= end:
-            target_hour = start
-        else:
-            target_hour = start if hour < start else start
-
-        wait_minutes = ((target_hour - hour) % 24) * 60 - now.minute
-        if wait_minutes <= 0:
-            wait_minutes = 1
+        # Calculate minutes until the send window opens
+        target = datetime.now(tz).replace(hour=start, minute=0, second=0, microsecond=0)
+        if target <= now:
+            # Window starts tomorrow
+            from datetime import timedelta
+            target += timedelta(days=1)
+        wait_minutes = max(1, int((target - now).total_seconds() / 60))
 
         logger.info(
             "Campaign %d: outside send window (%02d:00-%02d:00 %s), current=%02d:%02d, waiting %d min",
@@ -572,6 +572,7 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                             profile_meta["failure_step"] = "generate_greeting"
                             profile_meta["failure_detail"] = str(e)[:200]
                         lead.raw_profile_data = profile_meta
+                        flag_modified(lead, "raw_profile_data")
                         await session.commit()
                         continue
 
@@ -626,7 +627,6 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                             is_platform_restriction = (
                                 failure_code and failure_code.startswith("platform_")
                             )
-                            from sqlalchemy.orm.attributes import flag_modified
                             profile_meta = lead.raw_profile_data or {}
                             if isinstance(profile_meta, dict):
                                 profile_meta["failure_code"] = failure_code
@@ -715,6 +715,7 @@ async def _run_campaign_inner(campaign_id: int) -> None:  # noqa: C901
                             profile_meta["failure_step"] = "process_lead"
                             profile_meta["failure_detail"] = str(e)[:200]
                         lead.raw_profile_data = profile_meta
+                        flag_modified(lead, "raw_profile_data")
                     except Exception:
                         pass
                     await session.commit()
